@@ -63,6 +63,8 @@ boatrace-program-sheet --target-date 2026-04-24 --venue-code 22
 
 - Codex: `~/.codex/skills/boatrace-predictions`
 - Codex: `~/.codex/skills/boatrace-program-sheet`
+- Claude Code: `~/.claude/skills/boatrace-predictions`
+- Claude Code: `~/.claude/skills/boatrace-program-sheet`
 - Claude: `~/.claude/agents/boatrace-predictions.md`
 - Claude: `~/.claude/agents/boatrace-program-sheet.md`
 

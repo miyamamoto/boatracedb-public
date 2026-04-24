@@ -261,9 +261,10 @@ boatrace-prediction-query --format markdown status
 ## skill 連携
 
 - Codex 向け skill: `skills/boatrace-predictions/SKILL.md`
+- Claude Code 向け skill: `skills/boatrace-predictions/SKILL.md`
 - Claude 向け agent: `.claude/agents/boatrace-predictions.md`
 
-どちらも DuckDB から最新予測、モデル状態、日付別・レース別予測を参照する前提です。
+bootstrap は Codex には `~/.codex/skills`、Claude Code には `~/.claude/skills`、Claude agent には `~/.claude/agents` へ配置します。いずれも DuckDB から最新予測、モデル状態、日付別・レース別予測を参照する前提です。
 
 ## README との整合
 
