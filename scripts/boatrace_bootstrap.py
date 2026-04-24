@@ -1,0 +1,769 @@
+#!/usr/bin/env python3
+
+from __future__ import annotations
+
+import argparse
+import json
+import shutil
+import sys
+from dataclasses import asdict, dataclass, field
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from src.pipeline.local_prediction_service import LocalPredictionPipeline
+
+try:
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.progress import (
+        BarColumn,
+        Progress,
+        SpinnerColumn,
+        TaskProgressColumn,
+        TextColumn,
+        TimeElapsedColumn,
+        TimeRemainingColumn,
+    )
+    from rich.table import Table
+except ImportError:  # pragma: no cover
+    Console = None  # type: ignore[assignment]
+    Panel = None  # type: ignore[assignment]
+    Progress = None  # type: ignore[assignment]
+    SpinnerColumn = None  # type: ignore[assignment]
+    TaskProgressColumn = None  # type: ignore[assignment]
+    TextColumn = None  # type: ignore[assignment]
+    TimeElapsedColumn = None  # type: ignore[assignment]
+    TimeRemainingColumn = None  # type: ignore[assignment]
+    BarColumn = None  # type: ignore[assignment]
+    Table = None  # type: ignore[assignment]
+
+
+DEFAULT_DB_PATH = "data/boatrace_pipeline.duckdb"
+DEFAULT_CACHE_DIR = "data/comprehensive_cache"
+
+
+@dataclass
+class BootstrapConfig:
+    db_path: str = DEFAULT_DB_PATH
+    cache_dir: str = DEFAULT_CACHE_DIR
+    target_date: date = field(default_factory=date.today)
+    training_days: int = 90
+    retrain_interval_days: int = 7
+    download_missing: bool = True
+    install_codex_skills: bool = True
+    install_claude_agents: bool = True
+    codex_home: Path = field(default_factory=lambda: Path.home() / ".codex")
+    claude_home: Path = field(default_factory=lambda: Path.home() / ".claude")
+    skip_fetch: bool = False
+    skip_train: bool = False
+    skip_predict: bool = False
+    skip_skill_install: bool = False
+    summary_dir: str = "output/bootstrap"
+
+    @property
+    def training_start_date(self) -> date:
+        return self.target_date - timedelta(days=self.training_days)
+
+    @property
+    def training_end_date(self) -> date:
+        return self.target_date - timedelta(days=1)
+
+    @property
+    def fetch_start_date(self) -> date:
+        return self.training_start_date
+
+    @property
+    def fetch_end_date(self) -> date:
+        return self.target_date
+
+    def to_dict(self) -> Dict[str, Any]:
+        payload = asdict(self)
+        payload["target_date"] = self.target_date.isoformat()
+        payload["training_start_date"] = self.training_start_date.isoformat()
+        payload["training_end_date"] = self.training_end_date.isoformat()
+        payload["fetch_start_date"] = self.fetch_start_date.isoformat()
+        payload["fetch_end_date"] = self.fetch_end_date.isoformat()
+        payload["retrain_interval_days"] = self.retrain_interval_days
+        payload["codex_home"] = str(self.codex_home)
+        payload["claude_home"] = str(self.claude_home)
+        return payload
+
+
+def parse_date(value: str) -> date:
+    return datetime.strptime(value, "%Y-%m-%d").date()
+
+
+def parse_optional_date(value: Any) -> Optional[date]:
+    if value is None or value == "":
+        return None
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
+    if isinstance(value, datetime):
+        return value.date()
+    text = str(value)
+    for parser in (date.fromisoformat, lambda raw: datetime.fromisoformat(raw).date()):
+        try:
+            return parser(text)
+        except ValueError:
+            continue
+    return None
+
+
+def _copy_file(source: Path, destination: Path) -> Dict[str, Any]:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, destination)
+    return {
+        "source": str(source),
+        "destination": str(destination),
+    }
+
+
+class BootstrapRunner:
+    def __init__(
+        self,
+        config: BootstrapConfig,
+        project_root: Optional[Path] = None,
+        pipeline: Optional[LocalPredictionPipeline] = None,
+    ) -> None:
+        self.config = config
+        self.project_root = project_root or Path(__file__).resolve().parent.parent
+        self.pipeline = pipeline or LocalPredictionPipeline(db_path=config.db_path)
+
+    def run(
+        self,
+        progress_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+    ) -> Dict[str, Any]:
+        progress_callback = progress_callback or (lambda _event, _payload: None)
+        progress_callback("bootstrap:start", {"config": self.config.to_dict()})
+
+        summary: Dict[str, Any] = {
+            "success": False,
+            "config": self.config.to_dict(),
+            "fetch": None,
+            "train": None,
+            "predict": None,
+            "skills": None,
+            "status": None,
+        }
+
+        if self.config.skip_fetch:
+            progress_callback("bootstrap:stage_skipped", {"stage": "fetch", "reason": "skip_fetch"})
+            summary["fetch"] = {"skipped": True}
+        else:
+            progress_callback("bootstrap:stage_started", {"stage": "fetch", "label": "データ取得"})
+            summary["fetch"] = self.pipeline.run_fetch(
+                start_date=self.config.fetch_start_date,
+                end_date=self.config.fetch_end_date,
+                cache_dir=self.config.cache_dir,
+                download_missing=self.config.download_missing,
+                progress_callback=progress_callback,
+            )
+            progress_callback(
+                "bootstrap:stage_completed",
+                {"stage": "fetch", "summary": summary["fetch"].get("summary", {})},
+            )
+
+        if self.config.skip_train:
+            progress_callback("bootstrap:stage_skipped", {"stage": "train", "reason": "skip_train"})
+            summary["train"] = {"skipped": True}
+        else:
+            train_decision = self.decide_training_action()
+            progress_callback("bootstrap:train_decision", train_decision)
+            if train_decision["should_train"]:
+                progress_callback("bootstrap:stage_started", {"stage": "train", "label": "特徴量作成と学習"})
+                summary["train"] = self.pipeline.train_model(
+                    training_start_date=self.config.training_start_date,
+                    training_end_date=self.config.training_end_date,
+                    progress_callback=progress_callback,
+                )
+                summary["train"]["decision"] = train_decision
+                progress_callback(
+                    "bootstrap:stage_completed",
+                    {
+                        "stage": "train",
+                        "summary": {
+                            "model_path": summary["train"].get("model_path"),
+                            "validation_scores": summary["train"].get("validation_scores", {}),
+                        },
+                    },
+                )
+            else:
+                summary["train"] = {
+                    "skipped": True,
+                    "reason": train_decision["reason"],
+                    "decision": train_decision,
+                    "active_model": train_decision.get("active_model"),
+                }
+                progress_callback(
+                    "bootstrap:stage_skipped",
+                    {"stage": "train", "reason": train_decision["reason"]},
+                )
+
+        if self.config.skip_predict:
+            progress_callback("bootstrap:stage_skipped", {"stage": "predict", "reason": "skip_predict"})
+            summary["predict"] = {"skipped": True}
+        else:
+            progress_callback("bootstrap:stage_started", {"stage": "predict", "label": "本日の予測生成"})
+            summary["predict"] = self.pipeline.predict_for_date(
+                target_date=self.config.target_date,
+                progress_callback=progress_callback,
+            )
+            progress_callback(
+                "bootstrap:stage_completed",
+                {
+                    "stage": "predict",
+                    "summary": {
+                        "prediction_run_id": summary["predict"].get("prediction_run_id"),
+                        "target_date": summary["predict"].get("target_date"),
+                        "output_paths": summary["predict"].get("output_paths", {}),
+                    },
+                },
+            )
+
+        if self.config.skip_skill_install:
+            progress_callback(
+                "bootstrap:stage_skipped",
+                {"stage": "skills", "reason": "skip_skill_install"},
+            )
+            summary["skills"] = {"skipped": True}
+        else:
+            progress_callback("bootstrap:stage_started", {"stage": "skills", "label": "skill と agent の導入"})
+            summary["skills"] = self.install_skills(progress_callback=progress_callback)
+            progress_callback(
+                "bootstrap:stage_completed",
+                {
+                    "stage": "skills",
+                    "summary": {"installed_items": len(summary["skills"].get("installed", []))},
+                },
+            )
+
+        summary["status"] = self.pipeline.get_status()
+        summary["success"] = True
+        summary["summary_paths"] = self.write_summary(summary)
+        progress_callback("bootstrap:complete", {"summary": summary})
+        return summary
+
+    def decide_training_action(self) -> Dict[str, Any]:
+        status = self.pipeline.get_status() or {}
+        active_model = status.get("active_model")
+        if not active_model:
+            return {
+                "should_train": True,
+                "reason": "active_model_missing",
+                "message": "アクティブモデルがないため学習します。",
+                "active_model": None,
+            }
+
+        training_start = parse_optional_date(active_model.get("training_start_date"))
+        training_end = parse_optional_date(active_model.get("training_end_date"))
+        created_at = parse_optional_date(active_model.get("created_at"))
+        freshness_anchor = training_end or created_at
+        window_days = (
+            ((training_end - training_start).days + 1)
+            if training_start is not None and training_end is not None
+            else None
+        )
+        model_age_days = (
+            max((self.config.target_date - freshness_anchor).days, 0)
+            if freshness_anchor is not None
+            else None
+        )
+
+        reasons: List[str] = []
+        if window_days is None:
+            reasons.append("model_window_unknown")
+        elif window_days != self.config.training_days:
+            reasons.append("training_window_mismatch")
+
+        if model_age_days is None:
+            reasons.append("model_freshness_unknown")
+        elif model_age_days >= self.config.retrain_interval_days:
+            reasons.append("model_stale")
+
+        if reasons:
+            return {
+                "should_train": True,
+                "reason": reasons[0],
+                "reasons": reasons,
+                "message": self._format_train_decision_message(
+                    reasons=reasons,
+                    model_age_days=model_age_days,
+                    window_days=window_days,
+                ),
+                "active_model": active_model,
+                "model_age_days": model_age_days,
+                "window_days": window_days,
+            }
+
+        return {
+            "should_train": False,
+            "reason": "model_recent_enough",
+            "message": (
+                f"現在のアクティブモデルは {model_age_days} 日前まで学習済みなので、"
+                f"{self.config.retrain_interval_days} 日間隔の再学習条件には達していません。"
+            ),
+            "active_model": active_model,
+            "model_age_days": model_age_days,
+            "window_days": window_days,
+        }
+
+    def _format_train_decision_message(
+        self,
+        reasons: List[str],
+        model_age_days: Optional[int],
+        window_days: Optional[int],
+    ) -> str:
+        messages: List[str] = []
+        if "training_window_mismatch" in reasons:
+            messages.append(
+                f"現在の学習窓 {window_days} 日が設定値 {self.config.training_days} 日と一致しません。"
+            )
+        if "model_stale" in reasons and model_age_days is not None:
+            messages.append(
+                f"現在のモデルは {model_age_days} 日前までしか取り込んでおらず、"
+                f"{self.config.retrain_interval_days} 日間隔を超えています。"
+            )
+        if "model_window_unknown" in reasons:
+            messages.append("現在のモデルに学習窓情報がないため再学習します。")
+        if "model_freshness_unknown" in reasons:
+            messages.append("現在のモデルの鮮度が判定できないため再学習します。")
+        return " ".join(messages)
+
+    def install_skills(
+        self,
+        progress_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+    ) -> Dict[str, Any]:
+        progress_callback = progress_callback or (lambda _event, _payload: None)
+        installed: List[Dict[str, Any]] = []
+        operations: List[tuple[str, Path, Path]] = []
+
+        if self.config.install_codex_skills:
+            for skill_name in ("boatrace-predictions", "boatrace-program-sheet"):
+                source = self.project_root / "skills" / skill_name / "SKILL.md"
+                destination = self.config.codex_home / "skills" / skill_name / "SKILL.md"
+                operations.append(("codex_skill", source, destination))
+
+        if self.config.install_claude_agents:
+            for agent_name in ("boatrace-predictions.md", "boatrace-program-sheet.md"):
+                source = self.project_root / ".claude" / "agents" / agent_name
+                destination = self.config.claude_home / "agents" / agent_name
+                operations.append(("claude_agent", source, destination))
+
+        total = len(operations)
+        progress_callback("skills:start", {"total": total})
+        for index, (item_type, source, destination) in enumerate(operations, start=1):
+            progress_callback(
+                "skills:item_started",
+                {
+                    "current": index,
+                    "total": total,
+                    "item_type": item_type,
+                    "source": str(source),
+                    "destination": str(destination),
+                },
+            )
+            installed_item = _copy_file(source, destination)
+            installed_item["type"] = item_type
+            installed.append(installed_item)
+            progress_callback(
+                "skills:item_completed",
+                {
+                    "current": index,
+                    "total": total,
+                    "item_type": item_type,
+                    "destination": str(destination),
+                },
+            )
+
+        return {
+            "success": True,
+            "installed": installed,
+            "restart_notes": [
+                "Restart Codex to pick up new skills.",
+                "Restart Claude to pick up updated local agents.",
+            ],
+        }
+
+    def write_summary(self, summary: Dict[str, Any]) -> Dict[str, str]:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_dir = self.project_root / self.config.summary_dir / timestamp
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        json_path = output_dir / "bootstrap-summary.json"
+        markdown_path = output_dir / "bootstrap-summary.md"
+        json_path.write_text(
+            json.dumps(summary, ensure_ascii=False, indent=2, default=str),
+            encoding="utf-8",
+        )
+        markdown_path.write_text(self.render_summary_markdown(summary), encoding="utf-8")
+        return {
+            "json": str(json_path),
+            "markdown": str(markdown_path),
+        }
+
+    def render_summary_markdown(self, summary: Dict[str, Any]) -> str:
+        lines = [
+            "# BoatRace Bootstrap Summary",
+            "",
+            f"- Target Date: {self.config.target_date.isoformat()}",
+            f"- Fetch Window: {self.config.fetch_start_date.isoformat()} -> {self.config.fetch_end_date.isoformat()}",
+            f"- Training Window: {self.config.training_start_date.isoformat()} -> {self.config.training_end_date.isoformat()}",
+            "",
+        ]
+
+        fetch_summary = (summary.get("fetch") or {}).get("summary", {})
+        if fetch_summary:
+            lines.extend(
+                [
+                    "## Fetch",
+                    "",
+                    f"- Days Processed: {fetch_summary.get('days_processed', 0)}",
+                    f"- Days Missing: {fetch_summary.get('days_missing', 0)}",
+                    f"- Races: {fetch_summary.get('races_prerace', 0)}",
+                    f"- Entries: {fetch_summary.get('race_entries_prerace', 0)}",
+                    f"- Results: {fetch_summary.get('race_results', 0)}",
+                    "",
+                ]
+            )
+
+        train_summary = summary.get("train") or {}
+        if train_summary and not train_summary.get("skipped"):
+            lines.extend(
+                [
+                    "## Train",
+                    "",
+                    f"- Model Path: {train_summary.get('model_path')}",
+                    f"- Feature Count: {train_summary.get('feature_count')}",
+                    f"- Training Samples: {train_summary.get('training_samples')}",
+                    f"- Validation Samples: {train_summary.get('validation_samples')}",
+                ]
+            )
+            for key, value in (train_summary.get("validation_scores") or {}).items():
+                lines.append(f"- Validation {key}: {value}")
+            lines.append("")
+        elif train_summary and train_summary.get("skipped"):
+            lines.extend(
+                [
+                    "## Train",
+                    "",
+                    f"- Skipped: {train_summary.get('reason')}",
+                    f"- Note: {(train_summary.get('decision') or {}).get('message')}",
+                    "",
+                ]
+            )
+
+        predict_summary = summary.get("predict") or {}
+        if predict_summary and not predict_summary.get("skipped"):
+            lines.extend(
+                [
+                    "## Predict",
+                    "",
+                    f"- Target Date: {predict_summary.get('target_date')}",
+                    f"- Prediction Run ID: {predict_summary.get('prediction_run_id')}",
+                ]
+            )
+            for key, value in (predict_summary.get("output_paths") or {}).items():
+                lines.append(f"- {key}: {value}")
+            lines.append("")
+
+        skill_summary = summary.get("skills") or {}
+        if skill_summary and not skill_summary.get("skipped"):
+            lines.extend(["## Skills", ""])
+            for item in skill_summary.get("installed", []):
+                lines.append(f"- {item['type']}: {item['destination']}")
+            lines.append("")
+
+        lines.extend(
+            [
+                "## Status",
+                "",
+                f"- DB Path: {(summary.get('status') or {}).get('db_path')}",
+                f"- Models: {(summary.get('status') or {}).get('models')}",
+                f"- Prediction Runs: {(summary.get('status') or {}).get('prediction_runs')}",
+                "",
+            ]
+        )
+        return "\n".join(lines)
+
+
+class RichBootstrapUI:
+    STAGE_WEIGHTS = {
+        "fetch": 45.0,
+        "train": 30.0,
+        "predict": 20.0,
+        "skills": 5.0,
+    }
+
+    def __init__(self) -> None:
+        self.console = Console()
+        self.progress = Progress(
+            SpinnerColumn(),
+            TextColumn("{task.description}"),
+            BarColumn(bar_width=24),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+            console=self.console,
+        )
+        self.overall_task_id: Optional[int] = None
+        self.stage_task_ids: Dict[str, int] = {}
+        self.stage_ratios: Dict[str, float] = {stage: 0.0 for stage in self.STAGE_WEIGHTS}
+        self.train_feature_total = 7
+        self.predict_dynamic_total = 6
+
+    def __enter__(self) -> "RichBootstrapUI":
+        self.progress.start()
+        self.overall_task_id = self.progress.add_task("全体進捗", total=100.0)
+        for stage in self.STAGE_WEIGHTS:
+            self.stage_task_ids[stage] = self.progress.add_task(self._stage_label(stage), total=1)
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.progress.stop()
+
+    def callback(self, event: str, payload: Dict[str, Any]) -> None:
+        if event == "bootstrap:start":
+            self.console.print(
+                Panel.fit(
+                    "\n".join(
+                        [
+                            "BoatRace ローカル bootstrap を開始します。",
+                            f"対象日: {payload['config']['target_date']}",
+                            f"学習期間: {payload['config']['training_start_date']} -> {payload['config']['training_end_date']}",
+                            f"再学習間隔: {payload['config']['retrain_interval_days']} 日",
+                            f"取得期間: {payload['config']['fetch_start_date']} -> {payload['config']['fetch_end_date']}",
+                        ]
+                    ),
+                    title="Bootstrap",
+                )
+            )
+            return
+
+        if event == "bootstrap:stage_skipped":
+            stage = payload["stage"]
+            reason = payload.get("reason")
+            suffix = f" skip: {reason}" if reason else " (skip)"
+            self._update_stage(stage, 1.0, f"{self._stage_label(stage)}{suffix}")
+            return
+
+        if event.startswith("fetch:"):
+            self._handle_fetch(event, payload)
+            return
+        if event.startswith("train:"):
+            self._handle_train(event, payload)
+            return
+        if event.startswith("predict:"):
+            self._handle_predict(event, payload)
+            return
+        if event.startswith("skills:"):
+            self._handle_skills(event, payload)
+            return
+        if event == "bootstrap:complete":
+            self._render_completion(payload["summary"])
+
+    def _stage_label(self, stage: str) -> str:
+        return {
+            "fetch": "データ取得",
+            "train": "特徴量作成と学習",
+            "predict": "本日の予測",
+            "skills": "skill 導入",
+        }[stage]
+
+    def _update_stage(self, stage: str, ratio: float, description: str) -> None:
+        ratio = max(0.0, min(1.0, ratio))
+        self.stage_ratios[stage] = ratio
+        task_id = self.stage_task_ids[stage]
+        self.progress.update(task_id, total=100.0, completed=ratio * 100.0, description=description)
+        overall = sum(self.STAGE_WEIGHTS[name] * self.stage_ratios[name] for name in self.STAGE_WEIGHTS)
+        if self.overall_task_id is not None:
+            self.progress.update(
+                self.overall_task_id,
+                completed=overall,
+                description=f"全体進捗 {overall:.1f}%",
+            )
+
+    def _handle_fetch(self, event: str, payload: Dict[str, Any]) -> None:
+        if event == "fetch:start":
+            self._update_stage("fetch", 0.0, f"データ取得 {payload['start_date']} -> {payload['end_date']}")
+        elif event == "fetch:day_started":
+            ratio = ((payload["current"] - 1) / max(payload["total"], 1))
+            self._update_stage(
+                "fetch",
+                ratio,
+                f"データ取得 {payload['current']}/{payload['total']}日 {payload['target_date']}",
+            )
+        elif event == "fetch:downloading_missing":
+            self._update_stage(
+                "fetch",
+                max(self.stage_ratios["fetch"], (payload["current"] - 1) / max(payload["total"], 1)),
+                f"不足データを取得中 {payload['target_date']}",
+            )
+        elif event == "fetch:day_completed":
+            ratio = payload["current"] / max(payload["total"], 1)
+            status = "読込" if payload["status"] == "loaded" else "欠損"
+            self._update_stage(
+                "fetch",
+                ratio,
+                f"データ取得 {payload['current']}/{payload['total']}日 {payload['target_date']} {status}",
+            )
+        elif event == "fetch:complete":
+            summary = payload["summary"]
+            self._update_stage(
+                "fetch",
+                1.0,
+                f"データ取得 完了 {summary.get('days_processed', 0)}日処理 / {summary.get('days_missing', 0)}日欠損",
+            )
+
+    def _handle_train(self, event: str, payload: Dict[str, Any]) -> None:
+        if event == "train:load_data":
+            self._update_stage("train", 1 / 13, "学習データを読込中")
+        elif event == "train:feature_stage":
+            ratio = (1 + payload["step"]) / 13
+            self._update_stage("train", ratio, f"特徴量作成 {payload['label']}")
+        elif event == "train:split_data":
+            self._update_stage("train", 9 / 13, "学習/検証に分割中")
+        elif event == "train:fit_model":
+            self._update_stage("train", 10 / 13, "LightGBM を学習中")
+        elif event == "train:evaluate_model":
+            self._update_stage("train", 11 / 13, "検証指標を計算中")
+        elif event == "train:save_model":
+            self._update_stage("train", 12 / 13, "モデルを保存中")
+        elif event in {"train:register_model", "train:registered", "train:complete"}:
+            description = "モデルを登録中" if event != "train:complete" else "学習 完了"
+            self._update_stage("train", 1.0, description)
+
+    def _handle_predict(self, event: str, payload: Dict[str, Any]) -> None:
+        if event == "predict:load_model":
+            self.predict_dynamic_total = 6
+            self._update_stage("predict", 1 / self.predict_dynamic_total, "モデルを読込中")
+        elif event == "predict:load_target_races":
+            self.predict_dynamic_total = max(6, int(payload["races"]) + 5)
+            self._update_stage("predict", 2 / self.predict_dynamic_total, f"対象レースを読込中 {payload['races']}R")
+        elif event == "predict:load_history":
+            self._update_stage("predict", 3 / self.predict_dynamic_total, "履歴データを読込中")
+        elif event == "predict:feature_stage":
+            base = 3
+            ratio = (base + (payload["step"] / max(payload["total"], 1))) / self.predict_dynamic_total
+            self._update_stage("predict", ratio, f"予測特徴量を作成中 {payload['label']}")
+        elif event == "predict:score_entries":
+            self._update_stage("predict", 4 / self.predict_dynamic_total, "勝率スコアを計算中")
+        elif event == "predict:run_started":
+            total_races = max(int(payload.get("requested_races", 1)), 1)
+            self.predict_dynamic_total = total_races + 5
+            self._update_stage("predict", 4 / self.predict_dynamic_total, f"予測 run を開始 {total_races}R")
+        elif event == "predict:race_scored":
+            ratio = (4 + payload["current"]) / max(self.predict_dynamic_total, 1)
+            self._update_stage(
+                "predict",
+                ratio,
+                f"レース採点 {payload['current']}/{payload['total']} {payload['venue_code']}場 {payload['race_number']}R",
+            )
+        elif event == "predict:exporting":
+            ratio = (self.predict_dynamic_total - 1) / max(self.predict_dynamic_total, 1)
+            self._update_stage("predict", ratio, "予測スナップショットを書出中")
+        elif event == "predict:complete":
+            self._update_stage("predict", 1.0, f"予測 完了 {payload.get('total_races', 0)}R")
+
+    def _handle_skills(self, event: str, payload: Dict[str, Any]) -> None:
+        if event == "skills:start":
+            self._update_stage("skills", 0.0, "skill 導入を開始")
+        elif event == "skills:item_started":
+            ratio = (payload["current"] - 1) / max(payload["total"], 1)
+            self._update_stage("skills", ratio, f"導入中 {Path(payload['destination']).name}")
+        elif event == "skills:item_completed":
+            ratio = payload["current"] / max(payload["total"], 1)
+            self._update_stage("skills", ratio, f"導入完了 {Path(payload['destination']).name}")
+
+    def _render_completion(self, summary: Dict[str, Any]) -> None:
+        if Table is None:  # pragma: no cover
+            return
+        table = Table(title="Bootstrap 完了")
+        table.add_column("項目")
+        table.add_column("内容")
+        train_summary = summary.get("train") or {}
+        predict_summary = summary.get("predict") or {}
+        summary_paths = summary.get("summary_paths") or {}
+        table.add_row("学習モデル", str(train_summary.get("model_path", "-")))
+        table.add_row("予測日", str(predict_summary.get("target_date", "-")))
+        table.add_row("予測出力", str((predict_summary.get("output_paths") or {}).get("markdown", "-")))
+        table.add_row("summary", str(summary_paths.get("markdown", "-")))
+        self.console.print(table)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="One-command bootstrap for local BoatRace prediction setup"
+    )
+    parser.add_argument("--db-path", default=DEFAULT_DB_PATH)
+    parser.add_argument("--cache-dir", default=DEFAULT_CACHE_DIR)
+    parser.add_argument("--target-date", type=parse_date, default=date.today())
+    parser.add_argument("--training-days", type=int, default=90)
+    parser.add_argument("--retrain-interval-days", type=int, default=7)
+    parser.add_argument("--download-missing", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--install-codex-skills", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--install-claude-agents", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--codex-home", type=Path, default=Path.home() / ".codex")
+    parser.add_argument("--claude-home", type=Path, default=Path.home() / ".claude")
+    parser.add_argument("--skip-fetch", action="store_true")
+    parser.add_argument("--skip-train", action="store_true")
+    parser.add_argument("--skip-predict", action="store_true")
+    parser.add_argument("--skip-skill-install", action="store_true")
+    parser.add_argument("--summary-dir", default="output/bootstrap")
+    parser.add_argument("--format", choices=["json", "markdown"], default="markdown")
+    return parser
+
+
+def build_config(args: argparse.Namespace) -> BootstrapConfig:
+    if args.training_days < 2:
+        raise ValueError("training-days は 2 以上にしてください")
+    if args.retrain_interval_days < 1:
+        raise ValueError("retrain-interval-days は 1 以上にしてください")
+    return BootstrapConfig(
+        db_path=args.db_path,
+        cache_dir=args.cache_dir,
+        target_date=args.target_date,
+        training_days=args.training_days,
+        retrain_interval_days=args.retrain_interval_days,
+        download_missing=args.download_missing,
+        install_codex_skills=args.install_codex_skills,
+        install_claude_agents=args.install_claude_agents,
+        codex_home=args.codex_home,
+        claude_home=args.claude_home,
+        skip_fetch=args.skip_fetch,
+        skip_train=args.skip_train,
+        skip_predict=args.skip_predict,
+        skip_skill_install=args.skip_skill_install,
+        summary_dir=args.summary_dir,
+    )
+
+
+def main() -> int:
+    parser = build_parser()
+    args = parser.parse_args()
+    config = build_config(args)
+    runner = BootstrapRunner(config=config)
+
+    use_ui = (
+        args.format == "markdown"
+        and sys.stdout.isatty()
+        and Console is not None
+        and Progress is not None
+    )
+    if use_ui:
+        with RichBootstrapUI() as ui:
+            summary = runner.run(progress_callback=ui.callback)
+    else:
+        summary = runner.run()
+
+    if args.format == "json":
+        print(json.dumps(summary, ensure_ascii=False, indent=2, default=str))
+    else:
+        print(runner.render_summary_markdown(summary))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

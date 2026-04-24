@@ -1,0 +1,59 @@
+# Local environment
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# BoatRace local data and generated outputs
+data/
+models/
+output/
+logs/
+reports/
+cache/
+downloads/
+analysis/
+archive/
+docs/analysis_results/
+generated_articles/
+config/migration_summary.md
+.serena/
+.dockerignore
+*.log
+*.duckdb
+*.db
+*.sqlite
+*.lzh
+*.pkl
+*.joblib
+*.model
+*.csv
+
+# Secrets and credentials
+secrets/
+credentials/
+api_keys/
+tokens/
+*.secret
+*.key
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo

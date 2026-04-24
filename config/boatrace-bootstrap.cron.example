@@ -1,0 +1,6 @@
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+
+# 毎日 05:10 に実行
+# fetch / predict は毎日走り、train は boatrace_bootstrap.py 側の判定で既定 7 日間隔になります
+10 5 * * * cd /absolute/path/to/boatracedb && /absolute/path/to/boatracedb/.venv/bin/python /absolute/path/to/boatracedb/scripts/boatrace_bootstrap.py --training-days 90 --retrain-interval-days 7 >> /absolute/path/to/boatracedb/logs/cron/boatrace-bootstrap.log 2>&1

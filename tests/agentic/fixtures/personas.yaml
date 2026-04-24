@@ -1,0 +1,187 @@
+personas:
+  - id: commuter-safe-bettor
+    display_name: 朝活本命派の会社員
+    archetype: 出勤前に短時間で判断したい実用派
+    experience_level: 中級
+    primary_goal: 今日の全会場から堅い本線を数レースだけ絞りたい
+    research_goals:
+      - 本命寄りレースの抽出
+      - 本線と押さえの切り分け
+    output_preferences:
+      - 短い箇条書き
+      - 実戦的な優先順位
+      - 内部実装の説明は不要
+    frustration_points:
+      - 長い前置き
+      - 技術用語の露出
+      - 全レースの羅列
+    likely_requests:
+      - 今日の勝負レースを3つ
+      - 本線だけ先に
+
+  - id: beginner-family-viewer
+    display_name: 家族観戦の初心者
+    archetype: 専門用語が苦手なライト層
+    experience_level: 初心者
+    primary_goal: 難しい言葉を避けて、わかりやすく楽しめる見どころを知りたい
+    research_goals:
+      - 初心者向けのレース解説
+      - 本命と相手の意味の理解
+    output_preferences:
+      - やさしい言い換え
+      - まず結論
+      - 例え話が少しあると助かる
+    frustration_points:
+      - 券種の略語連発
+      - 数字だけの説明
+      - 威圧的な断定
+    likely_requests:
+      - 初心者向けに説明して
+      - どのレースが見やすい？
+
+  - id: print-kiosk-operator
+    display_name: 場外配布の印刷担当
+    archetype: 配布物を時間内に作りたいオペレーション担当
+    experience_level: 中級
+    primary_goal: 会場ごとの番組表を固定レイアウトで印刷したい
+    research_goals:
+      - 明日の番組表PDF生成
+      - 会場別の配布物作成
+    output_preferences:
+      - PDFファイルの明示
+      - 印刷前提の簡潔な説明
+    frustration_points:
+      - ファイル場所が曖昧
+      - 会場の取り違え
+      - 不要な技術解説
+    likely_requests:
+      - 明日の福岡の番組表をPDFで
+      - 全会場分を出して
+
+  - id: venue-comparison-analyst
+    display_name: 会場比較をしたい分析好き
+    archetype: 複数会場を横断して見たい比較派
+    experience_level: 上級
+    primary_goal: 会場ごとの強い本命と荒れそうなレースを比較したい
+    research_goals:
+      - 会場横断の比較
+      - 本命レースと混戦レースの切り分け
+    output_preferences:
+      - 比較表現
+      - 強弱の整理
+      - 冗長でない要約
+    frustration_points:
+      - 単独会場だけの回答
+      - 根拠のない断定
+    likely_requests:
+      - 会場ごとに強いレースを比較して
+      - 荒れそうなところも知りたい
+
+  - id: live-race-checker
+    display_name: 直前確認のライブ派
+    archetype: 開始直前に素早く確認するリアルタイム派
+    experience_level: 中級
+    primary_goal: 1レース単位で本命と注意点を短く確認したい
+    research_goals:
+      - レース単位の即断
+      - 本命とヒモ荒れの把握
+    output_preferences:
+      - 1レース単位
+      - 短文
+      - 本命・相手・注意点
+    frustration_points:
+      - 長い日次まとめ
+      - 会話の脱線
+    likely_requests:
+      - 鳴門11Rだけ見て
+      - 今すぐ結論だけ
+
+  - id: value-seeker
+    display_name: 中穴狙いの期待値派
+    archetype: 本命だけでなく妙味を探したい中穴派
+    experience_level: 上級
+    primary_goal: オッズ帯や期待値感で買い目を分類したい
+    research_goals:
+      - 低めと中穴の切り分け
+      - オッズ未取得時の代替判断
+    output_preferences:
+      - 低め・中穴・穴の分類
+      - 一言での期待感説明
+    frustration_points:
+      - 本命だけの説明
+      - オッズが無い時に黙ること
+    likely_requests:
+      - オッズ帯で分けて
+      - 中穴だけ拾って
+
+  - id: travel-planner
+    display_name: 現地遠征を考える観戦派
+    archetype: 会場ごとの見どころで行き先を決めたい人
+    experience_level: 中級
+    primary_goal: 明日どの会場を見る価値が高いかを知りたい
+    research_goals:
+      - 会場別の見どころ抽出
+      - 強い本命と面白いレースの両立
+    output_preferences:
+      - 会場別まとめ
+      - 面白さの説明
+    frustration_points:
+      - 予想だけで観戦価値が見えないこと
+      - 退屈なレポート調
+    likely_requests:
+      - 明日どの会場が面白い？
+      - 観戦向きの会場を選んで
+
+  - id: content-creator
+    display_name: 配信ネタを探すコンテンツ制作者
+    archetype: 面白い切り口も欲しい発信者
+    experience_level: 中級
+    primary_goal: 予想に加えて、話題になりやすい見どころを拾いたい
+    research_goals:
+      - ストーリー性のあるレース抽出
+      - 本命と波乱の対比
+    output_preferences:
+      - 面白い一言
+      - 硬すぎない説明
+    frustration_points:
+      - 無機質な数字の羅列
+      - 盛り上がりのない要約
+    likely_requests:
+      - 面白い見どころでまとめて
+      - 配信向けに話しやすくして
+
+  - id: bankroll-controller
+    display_name: 予算管理を重視する堅実派
+    archetype: 点数と資金配分を管理したい節度派
+    experience_level: 中級
+    primary_goal: 限られた予算で本線と押さえを整理したい
+    research_goals:
+      - 点数の圧縮
+      - 見送りレースの判断
+    output_preferences:
+      - 本線・押さえ・見送り
+      - 予算制約の反映
+    frustration_points:
+      - 点数が多すぎる提案
+      - 資金感のない提案
+    likely_requests:
+      - 2000円で組んで
+      - 見送りも教えて
+
+  - id: multi-venue-operations-lead
+    display_name: 多会場運用の現場リーダー
+    archetype: 全体を俯瞰したい管理寄りユーザー
+    experience_level: 上級
+    primary_goal: 今日と明日の準備状況を会場単位で確認したい
+    research_goals:
+      - 全会場の準備確認
+      - 予測と番組表の両方の有無確認
+    output_preferences:
+      - 会場単位の進捗
+      - すぐ動ける要約
+    frustration_points:
+      - 1会場だけの回答
+      - 状況整理が曖昧
+    likely_requests:
+      - 全会場の準備状況を出して
+      - 足りないものだけ教えて

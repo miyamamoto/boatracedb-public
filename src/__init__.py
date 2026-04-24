@@ -1,0 +1,1 @@
+# Boatrace prediction system package initialization

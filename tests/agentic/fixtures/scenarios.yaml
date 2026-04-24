@@ -1,0 +1,338 @@
+scenarios:
+  - id: morning-shortlist
+    persona_id: commuter-safe-bettor
+    title: 出勤前の本線3レース抽出
+    user_goal: 今日の全会場から、本線候補を3レースだけ理由付きで絞り込む
+    initial_prompt: 今日の全会場から、本線候補を3レースだけに絞ってください。理由も短くください。内部の仕組みの説明はいりません。
+    closing_prompt: 最後に、どれから優先して見るべきか順番も付けてください。
+    skills:
+      - boatrace-predictions
+    tags:
+      - daily-summary
+      - shortlist
+    smoke_chaos_profile: date-correction
+    compatible_chaos_profiles:
+      - date-correction
+      - scope-expansion
+      - interruption-and-return
+    success_rules:
+      - id: shortlist-has-main-line
+        description: 本線や本命の観点で絞れている
+        target: final_assistant
+        any_keywords:
+          - 本線
+          - 本命
+          - 勝負
+      - id: shortlist-has-priority
+        description: 優先順位が付いている
+        target: final_assistant
+        any_keywords:
+          - 1番手
+          - 優先
+          - 先に
+      - id: shortlist-hides-backend
+        description: 技術的な裏側説明を抑えている
+        target: final_assistant
+        absent_keywords:
+          - DuckDB
+          - Python
+          - CLI
+          - JSON
+
+  - id: beginner-friendly-briefing
+    persona_id: beginner-family-viewer
+    title: 初心者向けの見どころ解説
+    user_goal: 難しい言葉を避けて、見やすいレースをやさしく説明する
+    initial_prompt: 初心者にもわかるように、今日の見やすいレースを3つ教えてください。専門用語はできるだけ避けてください。
+    closing_prompt: 最後に、家族で見るならどれが一番わかりやすいかも教えてください。
+    skills:
+      - boatrace-predictions
+    tags:
+      - beginner
+      - plain-language
+    smoke_chaos_profile: interruption-and-return
+    compatible_chaos_profiles:
+      - interruption-and-return
+      - date-correction
+    success_rules:
+      - id: beginner-has-plain-language
+        description: 初心者向けの言い換えがある
+        target: assistant_any
+        any_keywords:
+          - わかりやすく
+          - 初心者
+          - 見やすい
+      - id: beginner-has-clear-choice
+        description: 一番わかりやすいレースが選ばれている
+        target: final_assistant
+        any_keywords:
+          - 一番
+          - 家族
+          - まず見るなら
+      - id: beginner-avoids-backend
+        description: 技術詳細が混ざっていない
+        target: final_assistant
+        absent_keywords:
+          - DuckDB
+          - CLI
+          - テーブル
+
+  - id: fukuoka-program-sheet
+    persona_id: print-kiosk-operator
+    title: 福岡の印刷用番組表PDF
+    user_goal: 明日の福岡の番組表を印刷用PDFとして出力する
+    initial_prompt: 明日の福岡の番組表を印刷用PDFで作ってください。各レースに軽い見立ても入っていると助かります。
+    closing_prompt: 最後に、印刷に回すファイルを一言で案内してください。
+    skills:
+      - boatrace-program-sheet
+      - boatrace-predictions
+    tags:
+      - pdf
+      - program-sheet
+      - artifact
+    smoke_chaos_profile: format-switch-to-pdf
+    compatible_chaos_profiles:
+      - date-correction
+      - format-switch-to-pdf
+      - scope-expansion
+    success_rules:
+      - id: program-sheet-mentions-pdf
+        description: 最終回答がPDF番組表を案内している
+        target: final_assistant
+        all_keywords:
+          - PDF
+          - 番組表
+          - 福岡
+      - id: program-sheet-has-artifact
+        description: PDF成果物が artifacts に含まれている
+        target: assistant_artifacts
+        artifact_patterns:
+          - "*.pdf"
+          - ".pdf"
+        artifact_must_exist: true
+      - id: program-sheet-hides-backend
+        description: 技術的な保存方式の説明を避けている
+        target: final_assistant
+        absent_keywords:
+          - DuckDB
+          - スクリプト
+          - Python
+
+  - id: multi-venue-comparison
+    persona_id: venue-comparison-analyst
+    title: 会場横断の強弱比較
+    user_goal: 会場ごとの強い本命と混戦レースを比較する
+    initial_prompt: 今日の全会場をざっと見て、会場ごとに強い本命レースと混戦レースを比較してください。比較しやすい形でお願いします。
+    closing_prompt: 最後に、特に差がはっきりしている会場を一言でまとめてください。
+    skills:
+      - boatrace-predictions
+    tags:
+      - comparison
+      - multi-venue
+    smoke_chaos_profile: scope-expansion
+    compatible_chaos_profiles:
+      - date-correction
+      - scope-expansion
+      - interruption-and-return
+    success_rules:
+      - id: comparison-has-strong-and-chaotic
+        description: 強い本命と混戦の両方を扱っている
+        target: final_assistant
+        all_keywords:
+          - 本命
+          - 混戦
+      - id: comparison-is-venue-oriented
+        description: 会場ごとの整理になっている
+        target: final_assistant
+        any_keywords:
+          - 会場ごと
+          - 各会場
+          - 比較
+
+  - id: single-race-live-check
+    persona_id: live-race-checker
+    title: 単独レースの直前確認
+    user_goal: 1レース単位で本命と相手と注意点を短く確認する
+    initial_prompt: 鳴門11Rを短く見てください。本命、相手、注意点だけで大丈夫です。
+    closing_prompt: 最後に、見送るべき条件があれば一言添えてください。
+    skills:
+      - boatrace-predictions
+    tags:
+      - single-race
+      - live-check
+    smoke_chaos_profile: date-correction
+    compatible_chaos_profiles:
+      - date-correction
+      - interruption-and-return
+    success_rules:
+      - id: live-check-has-structure
+        description: 本命・相手・注意点の3点が揃っている
+        target: final_assistant
+        all_keywords:
+          - 本命
+          - 相手
+          - 注意
+      - id: live-check-has-pass-condition
+        description: 見送り条件に触れている
+        target: final_assistant
+        any_keywords:
+          - 見送り
+          - 条件
+
+  - id: odds-band-value-hunt
+    persona_id: value-seeker
+    title: オッズ帯と期待値感での分類
+    user_goal: 買い目を低め・中穴・穴で分類し、欠損時は確率ベースで代替する
+    initial_prompt: 今日の買い目候補を、低め・中穴・穴で分けてください。オッズが無ければその前提を一言だけ言ってから進めてください。
+    closing_prompt: 最後に、中穴だけ3件に絞ってください。
+    skills:
+      - boatrace-predictions
+    tags:
+      - odds
+      - value
+      - classification
+    smoke_chaos_profile: missing-odds-pivot
+    compatible_chaos_profiles:
+      - missing-odds-pivot
+      - budget-shock
+    success_rules:
+      - id: value-hunt-has-bands
+        description: オッズ帯の分類がある
+        target: final_assistant
+        all_keywords:
+          - 低め
+          - 中穴
+          - 穴
+      - id: value-hunt-has-top3-middle
+        description: 中穴だけ3件に絞っている
+        target: final_assistant
+        any_keywords:
+          - 3件
+          - 3つ
+
+  - id: travel-worthy-venues
+    persona_id: travel-planner
+    title: 遠征先として面白い会場の選定
+    user_goal: 明日どの会場が見どころ豊富かを選ぶ
+    initial_prompt: 明日、遠征して見るならどの会場が面白そうですか？ 強い本命だけでなく、観戦として面白いレースも知りたいです。
+    closing_prompt: 最後に、行くなら第1候補と第2候補を出してください。
+    skills:
+      - boatrace-predictions
+      - boatrace-program-sheet
+    tags:
+      - travel
+      - venue-selection
+    smoke_chaos_profile: date-correction
+    compatible_chaos_profiles:
+      - date-correction
+      - scope-expansion
+    success_rules:
+      - id: travel-has-venue-candidates
+        description: 会場候補を複数提示している
+        target: final_assistant
+        any_keywords:
+          - 第1候補
+          - 第2候補
+          - 会場
+      - id: travel-has-fun-angle
+        description: 面白さや見どころに触れている
+        target: final_assistant
+        any_keywords:
+          - 面白い
+          - 見どころ
+          - 観戦
+
+  - id: creator-highlight-pack
+    persona_id: content-creator
+    title: 発信向けハイライト抽出
+    user_goal: 配信や投稿で話しやすい見どころを作る
+    initial_prompt: 今日のレースから、配信で話しやすい見どころを3つ作ってください。本命だけでなく、波乱要素も混ぜたいです。
+    closing_prompt: 最後に、それぞれ一言タイトルも付けてください。
+    skills:
+      - boatrace-predictions
+    tags:
+      - storytelling
+      - highlights
+    smoke_chaos_profile: interruption-and-return
+    compatible_chaos_profiles:
+      - interruption-and-return
+      - scope-expansion
+    success_rules:
+      - id: creator-has-three-highlights
+        description: 3つの見どころを作れている
+        target: final_assistant
+        any_keywords:
+          - 3つ
+          - 3件
+          - 見どころ
+      - id: creator-has-story-tone
+        description: 単なる数字の羅列ではなく話しやすい一言がある
+        target: final_assistant
+        any_keywords:
+          - タイトル
+          - 一言
+          - 波乱
+
+  - id: budget-controlled-ticketing
+    persona_id: bankroll-controller
+    title: 予算制約つきの買い目整理
+    user_goal: 本線・押さえ・見送りを予算内で整理する
+    initial_prompt: 今日の買い目候補を、本線・押さえ・見送りで整理してください。できれば点数は多すぎない方がいいです。
+    closing_prompt: 最後に、2000円で組むならどう配分するかまとめてください。
+    skills:
+      - boatrace-predictions
+    tags:
+      - budget
+      - prioritization
+    smoke_chaos_profile: budget-shock
+    compatible_chaos_profiles:
+      - budget-shock
+      - missing-odds-pivot
+    success_rules:
+      - id: budget-has-main-cover-skip
+        description: 本線・押さえ・見送りを分けている
+        target: final_assistant
+        all_keywords:
+          - 本線
+          - 押さえ
+          - 見送り
+      - id: budget-has-allocation
+        description: 予算配分に触れている
+        target: final_assistant
+        any_keywords:
+          - 2000円
+          - 配分
+          - 点数
+
+  - id: operations-readiness-check
+    persona_id: multi-venue-operations-lead
+    title: 全会場の準備状況チェック
+    user_goal: 今日と明日の出力準備状況を会場単位で確認する
+    initial_prompt: 今日と明日について、全会場の準備状況をざっと整理してください。予測と番組表のどちらが揃っているかも知りたいです。
+    closing_prompt: 最後に、すぐ動くべき不足項目だけを箇条書きでください。
+    skills:
+      - boatrace-predictions
+      - boatrace-program-sheet
+    tags:
+      - readiness
+      - operations
+    smoke_chaos_profile: scope-expansion
+    compatible_chaos_profiles:
+      - scope-expansion
+      - format-switch-to-pdf
+      - interruption-and-return
+    success_rules:
+      - id: ops-has-readiness-summary
+        description: 会場単位で準備状況を整理している
+        target: final_assistant
+        any_keywords:
+          - 準備状況
+          - 会場
+          - 予測
+      - id: ops-has-gap-list
+        description: 不足項目を箇条書きで出している
+        target: final_assistant
+        any_keywords:
+          - 不足
+          - すぐ動くべき
+          - 箇条書き

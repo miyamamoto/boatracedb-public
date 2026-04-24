@@ -1,0 +1,64 @@
+name: Minimal CI
+
+on:
+  pull_request:
+    branches: [ main ]
+    types: [ opened, synchronize, reopened, ready_for_review ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: minimal-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-unit:
+    name: lint-and-unit
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff
+
+      - name: Collect changed Python files
+        if: github.event_name == 'pull_request'
+        run: |
+          base_sha="${{ github.event.pull_request.base.sha }}"
+          head_sha="${{ github.event.pull_request.head.sha }}"
+          git diff --name-only "$base_sha" "$head_sha" -- '*.py' | while read -r path; do
+            if [ -f "$path" ]; then
+              echo "$path"
+            fi
+          done > changed_python_files.txt
+          if [ -s changed_python_files.txt ]; then
+            echo "HAS_CHANGED_PY=true" >> "$GITHUB_ENV"
+          else
+            echo "HAS_CHANGED_PY=false" >> "$GITHUB_ENV"
+          fi
+
+      - name: Lint changed Python files
+        if: github.event_name == 'pull_request' && env.HAS_CHANGED_PY == 'true'
+        run: |
+          xargs -a changed_python_files.txt ruff check --select E9,F63,F7,F82
+
+      - name: Lint fallback (core paths)
+        if: github.event_name != 'pull_request' || env.HAS_CHANGED_PY != 'true'
+        run: |
+          ruff check src scripts tests --select E9,F63,F7,F82

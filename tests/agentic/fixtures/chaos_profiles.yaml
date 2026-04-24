@@ -1,0 +1,126 @@
+chaos_profiles:
+  - id: date-correction
+    display_name: 相対日付の訂正
+    description: 最初は相対日付で依頼し、途中で絶対日付へ修正する
+    intensity: low
+    events:
+      - id: date-fix-01
+        step: 2
+        kind: correction
+        user_message: すみません、相対日付じゃなくて 2026-04-24 として扱ってください。
+        intent: 絶対日付へ固定して取り違えを防ぐ
+    success_rules:
+      - id: final-uses-absolute-date
+        description: 最終回答で絶対日付に沿って整理できている
+        target: final_assistant
+        any_keywords:
+          - 2026-04-24
+          - 4月24日
+
+  - id: scope-expansion
+    display_name: スコープ拡張
+    description: 途中で対象を1会場から全会場へ広げる
+    intensity: medium
+    events:
+      - id: scope-up-01
+        step: 2
+        kind: scope_change
+        user_message: やっぱりその会場だけじゃなくて、全会場で見たいです。
+        intent: 単独会場から全体サマリへ切り替える
+    success_rules:
+      - id: final-reflects-all-venues
+        description: 最終回答が全会場目線の要約に切り替わっている
+        target: final_assistant
+        any_keywords:
+          - 全会場
+          - 会場ごと
+          - 複数会場
+
+  - id: format-switch-to-pdf
+    display_name: 出力形式の切り替え
+    description: 途中で会話形式から印刷用PDFへ切り替える
+    intensity: medium
+    events:
+      - id: format-shift-01
+        step: 2
+        kind: format_change
+        user_message: 解説より、印刷に回せるPDFの番組表を優先してください。
+        intent: 最終成果物をPDF番組表へ切り替える
+    success_rules:
+      - id: final-mentions-pdf-output
+        description: 最終回答がPDF成果物を案内している
+        target: final_assistant
+        any_keywords:
+          - PDF
+          - 番組表
+      - id: artifact-has-pdf
+        description: Assistant artifacts に PDF が含まれている
+        target: assistant_artifacts
+        artifact_patterns:
+          - "*.pdf"
+          - ".pdf"
+        artifact_must_exist: true
+
+  - id: missing-odds-pivot
+    display_name: オッズ欠損へのピボット
+    description: オッズ帯の依頼を受けるが、オッズ未取得なら確率ベースへ切り替える
+    intensity: medium
+    events:
+      - id: odds-pivot-01
+        step: 2
+        kind: missing_data
+        user_message: オッズ帯でも分けてください。もしオッズがまだ無ければ、その前提だけ一言で言ってから確率ベースで続けてください。
+        intent: データ欠損時の代替案提示を求める
+    success_rules:
+      - id: final-handles-odds-gap
+        description: オッズの有無に触れつつ代替案へ切り替えている
+        target: final_assistant
+        any_keywords:
+          - オッズ
+          - 確率ベース
+          - 中穴
+
+  - id: interruption-and-return
+    display_name: 横道からの復帰
+    description: 途中で別依頼に逸れてから元のゴールへ戻す
+    intensity: high
+    events:
+      - id: interruption-01
+        step: 2
+        kind: interruption
+        user_message: いったんそれは止めて、鳴門11Rだけ先に見てください。
+        intent: 一時的に単独レースへ逸らす
+      - id: return-01
+        step: 3
+        kind: return_to_goal
+        user_message: ありがとう。やっぱり最初の依頼に戻して、全体の結論を出してください。
+        intent: 元のゴールへ戻る
+    success_rules:
+      - id: final-returns-to-original-goal
+        description: 最終回答が途中の寄り道ではなく元の依頼を完了している
+        target: final_assistant
+        any_keywords:
+          - まとめ
+          - 全体
+          - 最初の依頼
+
+  - id: budget-shock
+    display_name: 予算制約の後付け
+    description: 途中で予算上限が追加される
+    intensity: medium
+    events:
+      - id: budget-01
+        step: 2
+        kind: constraint_change
+        user_message: 予算は 2,000円までです。点数を絞って組み直してください。
+        intent: 本線と押さえを予算内へ圧縮する
+    success_rules:
+      - id: final-reflects-budget
+        description: 最終回答が予算と点数の絞り込みを反映している
+        target: final_assistant
+        all_keywords:
+          - 2,000円
+          - 本線
+        any_keywords:
+          - 点数
+          - 押さえ
