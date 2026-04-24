@@ -54,6 +54,7 @@ class BootstrapConfig:
     retrain_interval_days: int = 7
     download_missing: bool = True
     install_codex_skills: bool = True
+    install_claude_skills: bool = True
     install_claude_agents: bool = True
     codex_home: Path = field(default_factory=lambda: Path.home() / ".codex")
     claude_home: Path = field(default_factory=lambda: Path.home() / ".claude")
@@ -346,6 +347,12 @@ class BootstrapRunner:
                 destination = self.config.codex_home / "skills" / skill_name / "SKILL.md"
                 operations.append(("codex_skill", source, destination))
 
+        if self.config.install_claude_skills:
+            for skill_name in ("boatrace-predictions", "boatrace-program-sheet"):
+                source = self.project_root / "skills" / skill_name / "SKILL.md"
+                destination = self.config.claude_home / "skills" / skill_name / "SKILL.md"
+                operations.append(("claude_skill", source, destination))
+
         if self.config.install_claude_agents:
             for agent_name in ("boatrace-predictions.md", "boatrace-program-sheet.md"):
                 source = self.project_root / ".claude" / "agents" / agent_name
@@ -383,7 +390,7 @@ class BootstrapRunner:
             "installed": installed,
             "restart_notes": [
                 "Restart Codex to pick up new skills.",
-                "Restart Claude to pick up updated local agents.",
+                "Restart Claude Code to pick up new skills and updated local agents.",
             ],
         }
 
@@ -704,6 +711,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--retrain-interval-days", type=int, default=7)
     parser.add_argument("--download-missing", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--install-codex-skills", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--install-claude-skills", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--install-claude-agents", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--codex-home", type=Path, default=Path.home() / ".codex")
     parser.add_argument("--claude-home", type=Path, default=Path.home() / ".claude")
@@ -729,6 +737,7 @@ def build_config(args: argparse.Namespace) -> BootstrapConfig:
         retrain_interval_days=args.retrain_interval_days,
         download_missing=args.download_missing,
         install_codex_skills=args.install_codex_skills,
+        install_claude_skills=args.install_claude_skills,
         install_claude_agents=args.install_claude_agents,
         codex_home=args.codex_home,
         claude_home=args.claude_home,

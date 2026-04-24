@@ -109,6 +109,8 @@ def test_install_skills_copies_codex_and_claude_assets(tmp_path: Path) -> None:
     assert result["success"] is True
     assert (tmp_path / ".codex" / "skills" / "boatrace-predictions" / "SKILL.md").exists()
     assert (tmp_path / ".codex" / "skills" / "boatrace-program-sheet" / "SKILL.md").exists()
+    assert (tmp_path / ".claude" / "skills" / "boatrace-predictions" / "SKILL.md").exists()
+    assert (tmp_path / ".claude" / "skills" / "boatrace-program-sheet" / "SKILL.md").exists()
     assert (tmp_path / ".claude" / "agents" / "boatrace-predictions.md").exists()
     assert (tmp_path / ".claude" / "agents" / "boatrace-program-sheet.md").exists()
 
