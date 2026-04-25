@@ -3,7 +3,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENV_DIR="${ROOT_DIR}/.venv"
-PYTHON_BIN="${PYTHON:-python3}"
+UV_INSTALL_DIR="${ROOT_DIR}/.tools/bin"
+UV_BIN="${UV_BIN:-}"
 LOG_DIR="${ROOT_DIR}/logs/bootstrap-install"
 
 mkdir -p "${LOG_DIR}"
@@ -13,21 +14,24 @@ format_elapsed() {
   printf "%02d:%02d" "$((seconds / 60))" "$((seconds % 60))"
 }
 
-print_python_install_help() {
+print_uv_install_help() {
   cat >&2 <<'EOF'
 
-Python 3.11 以上と venv をインストールしてから、再実行してください。
+Python 3.11 と LightGBM などの依存関係は、installer がアプリ専用環境へ自動導入します。
+そのため通常は Python を手で入れる必要はありません。
 
-macOS:
-  brew install python@3.11
-  または https://www.python.org/downloads/ から Python 3.11+ を入れてください。
+ただし、Python runtime manager の uv を入れるために curl が必要です。
+curl が無い場合は次を入れてから再実行してください。
 
 Ubuntu / Debian:
   sudo apt update
-  sudo apt install -y python3 python3-venv python3-pip
+  sudo apt install -y curl
 
 Fedora:
-  sudo dnf install -y python3 python3-pip
+  sudo dnf install -y curl
+
+macOS:
+  curl は通常入っています。無い場合は Command Line Tools か Homebrew を確認してください。
 EOF
 }
 
@@ -36,14 +40,16 @@ print_header() {
 BoatRace Local Predictor installer
 
 これから次の順でセットアップします。
-  1. Python 仮想環境を作成
-  2. pip と依存関係を導入
-  3. 過去データを取得
-  4. 特徴量を作成してローカルモデルを学習
-  5. 対象日の予測を生成
-  6. Codex / Claude Code skill を導入
+  1. Python/依存管理ツール uv を確認または導入
+  2. アプリ専用の Python 3.11 環境を作成
+  3. DuckDB、LightGBM などの依存関係を導入
+  4. 過去データを取得
+  5. 特徴量を作成してローカルモデルを学習
+  6. 対象日の予測を生成
+  7. Codex / Claude Code skill を導入
 
 注意:
+  - Python 3.11 や LightGBM はアプリ専用環境に自動導入します。
   - 初回はデータ取得、特徴量作成、LightGBM 学習に時間がかかります。
   - SQL分析用に投入する過去データ量もこのあと確認します。
   - 90日学習では端末やネットワークにより数分から十数分程度かかることがあります。
@@ -79,6 +85,55 @@ resolve_bootstrap_args() {
     answer="${answer:-180}"
     BOOTSTRAP_ARGS+=("--analysis-days" "${answer}")
   fi
+}
+
+resolve_uv_bin() {
+  if [[ -n "${UV_BIN}" && -x "${UV_BIN}" ]]; then
+    printf '%s\n' "${UV_BIN}"
+    return
+  fi
+  if command -v uv >/dev/null 2>&1; then
+    command -v uv
+    return
+  fi
+  if [[ -x "${UV_INSTALL_DIR}/uv" ]]; then
+    printf '%s\n' "${UV_INSTALL_DIR}/uv"
+    return
+  fi
+}
+
+ensure_uv() {
+  local resolved
+  resolved="$(resolve_uv_bin || true)"
+  if [[ -n "${resolved}" ]]; then
+    UV_BIN="${resolved}"
+    echo "[1/7] Python/依存管理ツール uv を確認"
+    echo "     [SKIP] 既にあります: ${UV_BIN}"
+    echo
+    return
+  fi
+
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "[NG] curl が見つかりません。" >&2
+    print_uv_install_help
+    exit 1
+  fi
+
+  mkdir -p "${UV_INSTALL_DIR}"
+  run_with_spinner \
+    "1/7" \
+    "Python/依存管理ツール uv を導入" \
+    "通常 10秒から1分程度。uv は Python 3.11 の自動取得にも使います" \
+    "${LOG_DIR}/01_install_uv.log" \
+    env UV_INSTALL_DIR="${UV_INSTALL_DIR}" sh -c 'curl -LsSf https://astral.sh/uv/install.sh | sh'
+
+  resolved="$(resolve_uv_bin || true)"
+  if [[ -z "${resolved}" ]]; then
+    echo "[NG] uv の導入後に実行ファイルを見つけられませんでした。" >&2
+    echo "     ログ: ${LOG_DIR}/01_install_uv.log" >&2
+    exit 1
+  fi
+  UV_BIN="${resolved}"
 }
 
 run_with_spinner() {
@@ -126,55 +181,27 @@ run_with_spinner() {
 cd "${ROOT_DIR}"
 print_header
 resolve_bootstrap_args "$@"
-
-if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
-  echo "[NG] ${PYTHON_BIN} が見つかりません。" >&2
-  echo "     BoatRace Local Predictor には Python 3.11 以上が必要です。" >&2
-  print_python_install_help
-  exit 1
-fi
-
-if ! "${PYTHON_BIN}" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then
-  DETECTED_VERSION="$("${PYTHON_BIN}" -c 'import sys; print(".".join(map(str, sys.version_info[:3])))' 2>/dev/null || echo unknown)"
-  echo "[NG] Python 3.11 以上が必要です。" >&2
-  echo "     検出された Python: ${PYTHON_BIN} (${DETECTED_VERSION})" >&2
-  print_python_install_help
-  exit 1
-fi
-
-if ! "${PYTHON_BIN}" -m venv --help >/dev/null 2>&1; then
-  echo "[NG] Python の venv モジュールが使えません。" >&2
-  echo "     仮想環境を作るために venv が必要です。" >&2
-  print_python_install_help
-  exit 1
-fi
+ensure_uv
 
 if [[ ! -d "${VENV_DIR}" ]]; then
   run_with_spinner \
-    "1/6" \
-    "Python 仮想環境を作成" \
-    "通常 10秒から1分程度" \
-    "${LOG_DIR}/01_create_venv.log" \
-    "${PYTHON_BIN}" -m venv "${VENV_DIR}"
+    "2/7" \
+    "アプリ専用 Python 3.11 環境を作成" \
+    "初回は Python 3.11 runtime の取得を含むため数分かかることがあります" \
+    "${LOG_DIR}/02_create_python_env.log" \
+    "${UV_BIN}" venv --python 3.11 "${VENV_DIR}"
 else
-  echo "[1/6] Python 仮想環境を作成"
+  echo "[2/7] アプリ専用 Python 3.11 環境を作成"
   echo "     [SKIP] 既にあります: ${VENV_DIR}"
   echo
 fi
 
 run_with_spinner \
-  "2/6" \
-  "pip を更新" \
-  "通常 10秒から1分程度" \
-  "${LOG_DIR}/02_upgrade_pip.log" \
-  "${VENV_DIR}/bin/python" -m pip install --upgrade pip
-
-run_with_spinner \
-  "3/6" \
+  "3/7" \
   "依存関係をインストール" \
-  "初回は数分かかることがあります。DuckDB、LightGBM、rich などを導入します" \
+  "初回は数分かかることがあります。DuckDB、LightGBM、rich などをアプリ専用環境へ導入します" \
   "${LOG_DIR}/03_install_requirements.log" \
-  "${VENV_DIR}/bin/python" -m pip install -e .
+  "${UV_BIN}" pip install --python "${VENV_DIR}/bin/python" -e .
 
 if ! "${VENV_DIR}/bin/python" -c 'import lightgbm' >/dev/null 2>&1; then
   echo "[NG] LightGBM を読み込めません。"
@@ -185,7 +212,7 @@ if ! "${VENV_DIR}/bin/python" -c 'import lightgbm' >/dev/null 2>&1; then
 fi
 
 cat <<'EOF'
-[4/6-6/6] データ取得、特徴量作成、学習、予測、skill 導入へ進みます。
+[4/7-7/7] データ取得、特徴量作成、学習、予測、skill 導入へ進みます。
      ここからは画面に全体進捗、ステージ別進捗、現在処理中の内容を表示します。
      特に「特徴量作成と学習」は履歴集計と LightGBM 学習を行うため時間がかかります。
 

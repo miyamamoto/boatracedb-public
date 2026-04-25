@@ -1,52 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_URL="${BOATRACE_REPO_URL:-https://github.com/miyamamoto/boatracedb-public.git}"
+REPO_SLUG="${BOATRACE_REPO_SLUG:-miyamamoto/boatracedb-public}"
 BRANCH="${BOATRACE_BRANCH:-main}"
 INSTALL_DIR="${BOATRACE_INSTALL_DIR:-${HOME}/boatracedb}"
+ARCHIVE_URL="${BOATRACE_ARCHIVE_URL:-https://github.com/${REPO_SLUG}/archive/refs/heads/${BRANCH}.tar.gz}"
 
 log() {
   printf '[boatrace] %s\n' "$1"
-}
-
-print_python_install_help() {
-  cat >&2 <<'EOF'
-
-Python 3.11 以上をインストールしてから、同じコマンドを再実行してください。
-
-macOS:
-  brew install python@3.11
-  または https://www.python.org/downloads/ から Python 3.11+ を入れてください。
-
-Ubuntu / Debian:
-  sudo apt update
-  sudo apt install -y python3 python3-venv python3-pip
-
-Fedora:
-  sudo dnf install -y python3 python3-pip
-
-Windows:
-  この curl | bash 版は macOS / Linux 向けです。
-  Windows では Python 3.11+ を入れたうえで、PowerShell 版 installer を使ってください。
-EOF
-}
-
-print_git_install_help() {
-  cat >&2 <<'EOF'
-
-git をインストールしてから、同じコマンドを再実行してください。
-
-macOS:
-  xcode-select --install
-  または brew install git
-
-Ubuntu / Debian:
-  sudo apt update
-  sudo apt install -y git
-
-Fedora:
-  sudo dnf install -y git
-EOF
 }
 
 format_elapsed() {
@@ -84,63 +45,61 @@ run_with_spinner() {
 need_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
     echo "[NG] 必要なコマンドが見つかりません: $1" >&2
-    if [[ "$1" == "git" ]]; then
-      print_git_install_help
-    fi
     exit 1
   fi
 }
 
-need_command git
 need_command bash
+need_command curl
+need_command tar
+need_command mktemp
+need_command cp
 
 cat <<'EOF'
 BoatRace Local Predictor remote installer
 
-このコマンドはリポジトリ取得後、ローカル bootstrap を起動します。
+このコマンドはアプリ一式をダウンロードして展開し、ローカル bootstrap を起動します。
+git や Python を事前に入れておく必要はありません。
 bootstrap ではデータ取得、特徴量作成、モデル学習、予測、skill 導入まで実行します。
 初回は特徴量作成と学習に時間がかかるため、進捗表示を見ながら待ってください。
 
 EOF
 
-if command -v python3 >/dev/null 2>&1; then
-  PYTHON_BIN="python3"
-elif command -v python >/dev/null 2>&1; then
-  PYTHON_BIN="python"
-else
-  echo "[NG] Python が見つかりません。" >&2
-  echo "     BoatRace Local Predictor には Python 3.11 以上が必要です。" >&2
-  print_python_install_help
-  exit 1
-fi
+TMP_PARENT="${TMPDIR:-/tmp}"
+TMP_DIR="$(mktemp -d "${TMP_PARENT%/}/boatrace-installer.XXXXXX")"
+cleanup() {
+  rm -rf "${TMP_DIR}"
+}
+trap cleanup EXIT
 
-if ! "${PYTHON_BIN}" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then
-  DETECTED_VERSION="$("${PYTHON_BIN}" -c 'import sys; print(".".join(map(str, sys.version_info[:3])))' 2>/dev/null || echo unknown)"
-  echo "[NG] Python 3.11 以上が必要です。" >&2
-  echo "     検出された Python: ${PYTHON_BIN} (${DETECTED_VERSION})" >&2
-  print_python_install_help
-  exit 1
-fi
-
-if ! "${PYTHON_BIN}" -m venv --help >/dev/null 2>&1; then
-  echo "[NG] Python の venv モジュールが使えません。" >&2
-  echo "     仮想環境を作るために venv が必要です。" >&2
-  print_python_install_help
-  exit 1
-fi
-
-if [[ -d "${INSTALL_DIR}/.git" ]]; then
-  log "既存リポジトリを更新します: ${INSTALL_DIR}"
-  run_with_spinner "リモート更新を確認" git -C "${INSTALL_DIR}" fetch origin "${BRANCH}"
-  run_with_spinner "ブランチを切り替え" git -C "${INSTALL_DIR}" switch "${BRANCH}"
-  run_with_spinner "最新版を取得" git -C "${INSTALL_DIR}" pull --ff-only origin "${BRANCH}"
-elif [[ -e "${INSTALL_DIR}" ]]; then
-  echo "インストール先が既に存在しますが Git リポジトリではありません: ${INSTALL_DIR}" >&2
+if [[ -e "${INSTALL_DIR}" && ! -d "${INSTALL_DIR}" ]]; then
+  echo "インストール先が既に存在しますがディレクトリではありません: ${INSTALL_DIR}" >&2
   echo "別の場所に入れる場合は BOATRACE_INSTALL_DIR=/path/to/dir を指定してください。" >&2
   exit 1
+fi
+
+log "アプリ一式をダウンロードします: ${ARCHIVE_URL}"
+run_with_spinner "パッケージをダウンロード" curl -fsSL "${ARCHIVE_URL}" -o "${TMP_DIR}/boatrace.tar.gz"
+run_with_spinner "パッケージを展開" tar -xzf "${TMP_DIR}/boatrace.tar.gz" -C "${TMP_DIR}"
+
+EXTRACTED_DIR="$(find "${TMP_DIR}" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+if [[ -z "${EXTRACTED_DIR}" || ! -d "${EXTRACTED_DIR}" ]]; then
+  echo "展開したパッケージの中身を確認できませんでした。" >&2
+  exit 1
+fi
+
+if [[ -d "${INSTALL_DIR}" ]]; then
+  log "既存インストールを更新します: ${INSTALL_DIR}"
 else
-  log "リポジトリを取得します: ${REPO_URL} (${BRANCH})"
-  run_with_spinner "リポジトリを clone" git clone --branch "${BRANCH}" "${REPO_URL}" "${INSTALL_DIR}"
+  log "インストール先を作成します: ${INSTALL_DIR}"
+  mkdir -p "${INSTALL_DIR}"
+fi
+
+run_with_spinner "アプリファイルを配置" cp -R "${EXTRACTED_DIR}/." "${INSTALL_DIR}/"
+
+if [[ "${BOATRACE_SKIP_BOOTSTRAP:-}" == "1" ]]; then
+  log "BOATRACE_SKIP_BOOTSTRAP=1 のため bootstrap は実行しません"
+  exit 0
 fi
 
 log "ローカル予測環境を初期化します"

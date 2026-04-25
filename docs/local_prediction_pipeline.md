@@ -13,14 +13,14 @@
 
 ## 前提
 
-- Python 3.11 以上
 - macOS / Linux は標準対応
+- 1 コマンド導入では Python 3.11 と依存関係をアプリ専用環境へ自動導入します
 - Windows は core bootstrap path を PowerShell 経由で利用可能
 - 既定の DuckDB パス: `data/boatrace_pipeline.duckdb`
 
 ## インストール
 
-最短導線はリモート installer です。
+最短導線はリモート installer です。GitHub のアプリ一式をダウンロードして `~/boatracedb` に展開し、`uv` でアプリ専用の Python 3.11 環境を作ります。git、Python、LightGBM を事前に入れておく必要はありません。
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/miyamamoto/boatracedb-public/main/scripts/install_remote.sh | bash
@@ -32,7 +32,7 @@ curl -fsSL https://raw.githubusercontent.com/miyamamoto/boatracedb-public/main/s
 curl -fsSL https://raw.githubusercontent.com/miyamamoto/boatracedb-public/main/scripts/install_remote.sh | bash -s -- --target-date 2026-04-24 --training-days 90
 ```
 
-手動で clone する場合:
+手動で clone して開発者向けに入れる場合:
 
 ```bash
 git clone https://github.com/miyamamoto/boatracedb-public.git
@@ -63,10 +63,12 @@ Windows PowerShell:
 powershell -ExecutionPolicy Bypass -File .\scripts\install_boatrace_local.ps1
 ```
 
-installer は、仮想環境作成、pip 更新、依存関係導入、データ取得、特徴量作成、モデル学習、予測、skill 導入を順に表示します。依存導入前は軽量な自前スピナー、bootstrap 開始後は rich による全体進捗とステージ別進捗を表示します。
+installer は、uv 導入、アプリ専用 Python 環境作成、依存関係導入、データ取得、特徴量作成、モデル学習、予測、skill 導入を順に表示します。依存導入前は軽量な自前スピナー、bootstrap 開始後は rich による全体進捗とステージ別進捗を表示します。
 
 初回は時間がかかります。特に次の工程は重いです。
 
+- Python runtime 取得: 端末に Python 3.11 が無い場合、uv がアプリ専用の runtime を取得します。
+- 依存関係導入: DuckDB、LightGBM、rich などの Python package をアプリ専用環境に導入します。
 - データ取得: 未取得日が多い場合はネットワーク待ちが発生します。
 - 特徴量作成: 選手・モーター・会場などの過去成績を時系列で集計するため CPU とディスクを使います。
 - モデル学習: LightGBM 学習と検証を行います。90 日学習では端末性能により数分から十数分程度かかることがあります。

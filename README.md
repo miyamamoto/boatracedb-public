@@ -9,7 +9,7 @@
 
 ## 1 コマンド導入
 
-macOS / Linux:
+macOS / Linux は、GitHub のアプリ一式を `~/boatracedb` に展開してからセットアップします。git、Python、LightGBM を事前に入れておく必要はありません。installer が `uv` を使ってアプリ専用の Python 3.11 環境と依存関係を作ります。
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/miyamamoto/boatracedb-public/main/scripts/install_remote.sh | bash
@@ -29,9 +29,9 @@ cd $HOME\boatracedb
 powershell -ExecutionPolicy Bypass -File .\scripts\install_boatrace_local.ps1
 ```
 
-初回導入では、リポジトリ取得、仮想環境作成、依存関係導入、データ取得、特徴量作成、モデル学習、予測、skill/agent 配置まで実行します。既定の学習期間は直近 90 日、再学習間隔は 7 日です。
+初回導入では、アプリ一式の展開、アプリ専用 Python 環境作成、依存関係導入、データ取得、特徴量作成、モデル学習、予測、skill/agent 配置まで実行します。既定の学習期間は直近 90 日、再学習間隔は 7 日です。
 
-インストール中はスピナー、全体進捗、ステージ別進捗、経過時間、残り時間の目安を表示します。初回はデータ取得、特徴量作成、LightGBM 学習に時間がかかります。特に特徴量作成では、選手・モーター・会場などの過去成績を時系列で集計するため、端末性能やネットワーク状況によって数分から十数分程度かかることがあります。
+インストール中はスピナー、全体進捗、ステージ別進捗、経過時間、残り時間の目安を表示します。初回は Python runtime 取得、DuckDB / LightGBM などの依存導入、データ取得、特徴量作成、LightGBM 学習に時間がかかります。特に特徴量作成では、選手・モーター・会場などの過去成績を時系列で集計するため、端末性能やネットワーク状況によって数分から十数分程度かかることがあります。
 
 セットアップ時は、学習期間とは別に SQL 分析用へ投入する過去実績日数も指定できます。未指定の場合は既定で 180 日分を取得します。対話実行では installer が確認します。
 
