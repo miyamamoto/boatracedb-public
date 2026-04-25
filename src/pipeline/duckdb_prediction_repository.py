@@ -372,6 +372,158 @@ class DuckDBPredictionRepository:
                 )
                 """
             )
+            self._create_analysis_views(conn)
+
+    def _create_analysis_views(self, conn: duckdb.DuckDBPyConnection) -> None:
+        conn.execute(
+            """
+            CREATE OR REPLACE VIEW analysis_racer_results AS
+            SELECT
+                e.race_date,
+                e.venue_code,
+                e.venue_name,
+                e.race_number,
+                e.boat_number,
+                e.racer_number,
+                e.racer_name,
+                e.branch,
+                e.racer_class,
+                e.motor_number,
+                e.boat_equipment_number,
+                e.national_win_rate,
+                e.national_quinella_rate,
+                e.local_win_rate,
+                e.local_quinella_rate,
+                e.motor_quinella_rate,
+                e.boat_quinella_rate,
+                r.grade,
+                r.distance,
+                r.race_name,
+                rr.exhibition_time,
+                rr.st_timing,
+                rr.result_position,
+                rr.result_time,
+                COALESCE(rr.disqualified, FALSE) AS disqualified
+            FROM race_entries_prerace AS e
+            LEFT JOIN races_prerace AS r
+                ON e.race_date = r.race_date
+               AND e.venue_code = r.venue_code
+               AND e.race_number = r.race_number
+            LEFT JOIN race_results AS rr
+                ON e.race_date = rr.race_date
+               AND e.venue_code = rr.venue_code
+               AND e.race_number = rr.race_number
+               AND e.boat_number = rr.boat_number
+            """
+        )
+        conn.execute(
+            """
+            CREATE OR REPLACE VIEW analysis_racer_summary AS
+            SELECT
+                racer_number,
+                any_value(racer_name) AS racer_name,
+                any_value(branch) AS branch,
+                any_value(racer_class) AS racer_class,
+                COUNT(*) AS starts,
+                SUM(CASE WHEN result_position = 1 THEN 1 ELSE 0 END) AS wins,
+                SUM(CASE WHEN result_position <= 2 THEN 1 ELSE 0 END) AS top2,
+                SUM(CASE WHEN result_position <= 3 THEN 1 ELSE 0 END) AS top3,
+                AVG(result_position) AS avg_finish,
+                AVG(st_timing) AS avg_st,
+                CAST(SUM(CASE WHEN result_position = 1 THEN 1 ELSE 0 END) AS DOUBLE) / NULLIF(COUNT(*), 0) AS win_rate,
+                CAST(SUM(CASE WHEN result_position <= 2 THEN 1 ELSE 0 END) AS DOUBLE) / NULLIF(COUNT(*), 0) AS top2_rate,
+                CAST(SUM(CASE WHEN result_position <= 3 THEN 1 ELSE 0 END) AS DOUBLE) / NULLIF(COUNT(*), 0) AS top3_rate,
+                MIN(race_date) AS first_race_date,
+                MAX(race_date) AS latest_race_date
+            FROM analysis_racer_results
+            WHERE racer_number IS NOT NULL
+              AND result_position IS NOT NULL
+            GROUP BY racer_number
+            """
+        )
+        conn.execute(
+            """
+            CREATE OR REPLACE VIEW analysis_racer_venue_summary AS
+            SELECT
+                racer_number,
+                any_value(racer_name) AS racer_name,
+                venue_code,
+                any_value(venue_name) AS venue_name,
+                COUNT(*) AS starts,
+                SUM(CASE WHEN result_position = 1 THEN 1 ELSE 0 END) AS wins,
+                SUM(CASE WHEN result_position <= 2 THEN 1 ELSE 0 END) AS top2,
+                SUM(CASE WHEN result_position <= 3 THEN 1 ELSE 0 END) AS top3,
+                AVG(result_position) AS avg_finish,
+                AVG(st_timing) AS avg_st,
+                CAST(SUM(CASE WHEN result_position = 1 THEN 1 ELSE 0 END) AS DOUBLE) / NULLIF(COUNT(*), 0) AS win_rate,
+                CAST(SUM(CASE WHEN result_position <= 2 THEN 1 ELSE 0 END) AS DOUBLE) / NULLIF(COUNT(*), 0) AS top2_rate,
+                CAST(SUM(CASE WHEN result_position <= 3 THEN 1 ELSE 0 END) AS DOUBLE) / NULLIF(COUNT(*), 0) AS top3_rate,
+                MAX(race_date) AS latest_race_date
+            FROM analysis_racer_results
+            WHERE racer_number IS NOT NULL
+              AND venue_code IS NOT NULL
+              AND result_position IS NOT NULL
+            GROUP BY racer_number, venue_code
+            """
+        )
+        conn.execute(
+            """
+            CREATE OR REPLACE VIEW analysis_motor_summary AS
+            SELECT
+                venue_code,
+                any_value(venue_name) AS venue_name,
+                motor_number,
+                COUNT(*) AS starts,
+                SUM(CASE WHEN result_position = 1 THEN 1 ELSE 0 END) AS wins,
+                SUM(CASE WHEN result_position <= 2 THEN 1 ELSE 0 END) AS top2,
+                SUM(CASE WHEN result_position <= 3 THEN 1 ELSE 0 END) AS top3,
+                AVG(result_position) AS avg_finish,
+                AVG(st_timing) AS avg_st,
+                CAST(SUM(CASE WHEN result_position = 1 THEN 1 ELSE 0 END) AS DOUBLE) / NULLIF(COUNT(*), 0) AS win_rate,
+                CAST(SUM(CASE WHEN result_position <= 2 THEN 1 ELSE 0 END) AS DOUBLE) / NULLIF(COUNT(*), 0) AS top2_rate,
+                CAST(SUM(CASE WHEN result_position <= 3 THEN 1 ELSE 0 END) AS DOUBLE) / NULLIF(COUNT(*), 0) AS top3_rate,
+                MAX(race_date) AS latest_race_date
+            FROM analysis_racer_results
+            WHERE venue_code IS NOT NULL
+              AND motor_number IS NOT NULL
+              AND result_position IS NOT NULL
+            GROUP BY venue_code, motor_number
+            """
+        )
+        conn.execute(
+            """
+            CREATE OR REPLACE VIEW analysis_race_calendar AS
+            SELECT
+                r.race_date,
+                r.venue_code,
+                r.venue_name,
+                r.race_number,
+                r.race_name,
+                r.grade,
+                r.distance,
+                r.race_start_time,
+                COUNT(DISTINCT e.boat_number) AS entry_count,
+                COUNT(DISTINCT rr.boat_number) AS result_count
+            FROM races_prerace AS r
+            LEFT JOIN race_entries_prerace AS e
+                ON r.race_date = e.race_date
+               AND r.venue_code = e.venue_code
+               AND r.race_number = e.race_number
+            LEFT JOIN race_results AS rr
+                ON r.race_date = rr.race_date
+               AND r.venue_code = rr.venue_code
+               AND r.race_number = rr.race_number
+            GROUP BY
+                r.race_date,
+                r.venue_code,
+                r.venue_name,
+                r.race_number,
+                r.race_name,
+                r.grade,
+                r.distance,
+                r.race_start_time
+            """
+        )
 
     @staticmethod
     def _rows_to_dicts(cursor: duckdb.DuckDBPyConnection) -> List[Dict[str, Any]]:
@@ -1602,6 +1754,18 @@ class DuckDBPredictionRepository:
                     "SELECT * FROM prediction_runs ORDER BY created_at DESC LIMIT 1"
                 )
             )
+            analysis_views = self._rows_to_dicts(
+                conn.execute(
+                    """
+                    SELECT table_name
+                    FROM information_schema.tables
+                    WHERE table_type = 'VIEW'
+                      AND table_schema = 'main'
+                      AND table_name LIKE 'analysis_%'
+                    ORDER BY table_name
+                    """
+                )
+            )
 
         return {
             "db_path": str(self.db_path),
@@ -1635,6 +1799,7 @@ class DuckDBPredictionRepository:
             "active_model": self.get_active_model(),
             "latest_fetch_run": self._decode_fetch_run(latest_fetch[0]) if latest_fetch else None,
             "latest_prediction_run": self._decode_prediction_run(latest_prediction[0]) if latest_prediction else None,
+            "analysis_views": [row["table_name"] for row in analysis_views],
         }
 
     def _decode_model(self, row: Dict[str, Any]) -> Dict[str, Any]:

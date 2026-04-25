@@ -27,10 +27,40 @@ BoatRace Local Predictor installer
 
 注意:
   - 初回はデータ取得、特徴量作成、LightGBM 学習に時間がかかります。
+  - SQL分析用に投入する過去データ量もこのあと確認します。
   - 90日学習では端末やネットワークにより数分から十数分程度かかることがあります。
   - 詳細ログは logs/bootstrap-install/ に保存します。
 EOF
   printf '\n'
+}
+
+has_arg() {
+  local name="$1"
+  shift
+  for arg in "$@"; do
+    if [[ "${arg}" == "${name}" || "${arg}" == "${name}="* ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+resolve_bootstrap_args() {
+  BOOTSTRAP_ARGS=("$@")
+  if has_arg "--analysis-days" "${BOOTSTRAP_ARGS[@]}"; then
+    return
+  fi
+  if [[ -n "${BOATRACE_ANALYSIS_DAYS:-}" ]]; then
+    BOOTSTRAP_ARGS+=("--analysis-days" "${BOATRACE_ANALYSIS_DAYS}")
+    return
+  fi
+  if [[ -t 0 ]]; then
+    local answer
+    printf 'SQL分析用にDuckDBへ投入する過去実績は何日分にしますか？ [180]: '
+    read -r answer || true
+    answer="${answer:-180}"
+    BOOTSTRAP_ARGS+=("--analysis-days" "${answer}")
+  fi
 }
 
 run_with_spinner() {
@@ -77,6 +107,7 @@ run_with_spinner() {
 
 cd "${ROOT_DIR}"
 print_header
+resolve_bootstrap_args "$@"
 
 if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
   echo "python3 が見つかりません。Python 3.11 以上を用意してください。"
@@ -129,4 +160,4 @@ cat <<'EOF'
      特に「特徴量作成と学習」は履歴集計と LightGBM 学習を行うため時間がかかります。
 
 EOF
-exec "${VENV_DIR}/bin/python" "${ROOT_DIR}/scripts/boatrace_bootstrap.py" "$@"
+exec "${VENV_DIR}/bin/python" "${ROOT_DIR}/scripts/boatrace_bootstrap.py" "${BOOTSTRAP_ARGS[@]}"

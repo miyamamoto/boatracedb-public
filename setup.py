@@ -45,6 +45,7 @@ setup(
     entry_points={
         "console_scripts": [
             "boatrace-local-pipeline=scripts.boatrace_local_pipeline:main",
+            "boatrace-analysis-query=scripts.boatrace_analysis_query:main",
             "boatrace-prediction-query=scripts.boatrace_prediction_query:main",
             "boatrace-bootstrap=scripts.boatrace_bootstrap:main",
             "boatrace-program-sheet=scripts.boatrace_program_sheet:main",
