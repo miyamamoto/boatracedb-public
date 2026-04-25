@@ -3,7 +3,9 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from scripts.boatrace_bootstrap import BootstrapConfig, BootstrapRunner
+import pytest
+
+from scripts.boatrace_bootstrap import BootstrapConfig, BootstrapRunner, build_config, build_parser
 
 
 class DummyPipeline:
@@ -85,12 +87,20 @@ class DummyPipeline:
 
 
 def test_bootstrap_config_derives_expected_windows() -> None:
-    config = BootstrapConfig(target_date=date(2026, 4, 23), training_days=90, analysis_days=90)
+    config = BootstrapConfig(target_date=date(2026, 4, 23), training_days=90, analysis_days=180)
 
-    assert config.fetch_start_date == date(2026, 1, 23)
+    assert config.fetch_start_date == date(2025, 10, 25)
     assert config.fetch_end_date == date(2026, 4, 23)
     assert config.training_start_date == date(2026, 1, 23)
     assert config.training_end_date == date(2026, 4, 22)
+
+
+def test_build_config_rejects_analysis_days_below_minimum() -> None:
+    parser = build_parser()
+    args = parser.parse_args(["--target-date", "2026-04-23", "--analysis-days", "179"])
+
+    with pytest.raises(ValueError, match="analysis-days は 180 以上"):
+        build_config(args)
 
 
 def test_install_skills_copies_codex_and_claude_assets(tmp_path: Path) -> None:

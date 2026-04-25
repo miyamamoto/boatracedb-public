@@ -501,11 +501,13 @@ class BootstrapRunner:
 
 class RichBootstrapUI:
     STAGE_WEIGHTS = {
-        "fetch": 45.0,
-        "train": 30.0,
-        "predict": 20.0,
+        "fetch": 35.0,
+        "features": 30.0,
+        "train": 20.0,
+        "predict": 10.0,
         "skills": 5.0,
     }
+    STAGE_ORDER = ["fetch", "features", "train", "predict", "skills"]
 
     def __init__(self) -> None:
         self.console = Console()
@@ -519,16 +521,13 @@ class RichBootstrapUI:
             console=self.console,
         )
         self.overall_task_id: Optional[int] = None
-        self.stage_task_ids: Dict[str, int] = {}
         self.stage_ratios: Dict[str, float] = {stage: 0.0 for stage in self.STAGE_WEIGHTS}
         self.train_feature_total = 7
         self.predict_dynamic_total = 6
 
     def __enter__(self) -> "RichBootstrapUI":
         self.progress.start()
-        self.overall_task_id = self.progress.add_task("全体進捗", total=100.0)
-        for stage in self.STAGE_WEIGHTS:
-            self.stage_task_ids[stage] = self.progress.add_task(self._stage_label(stage), total=1)
+        self.overall_task_id = self.progress.add_task("準備中", total=100.0)
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
@@ -548,7 +547,7 @@ class RichBootstrapUI:
                             f"取得期間: {payload['config']['fetch_start_date']} -> {payload['config']['fetch_end_date']}",
                             "",
                             "初回はデータ取得、特徴量作成、LightGBM 学習に時間がかかります。",
-                            "画面下部に全体進捗、ステージ別進捗、現在処理中の内容、経過時間、残り時間の目安を表示します。",
+                            "画面下部には、現在実行中の1ステップだけを表示します。",
                             "特徴量作成では選手・モーター・会場などの過去成績を時系列で集計するため、ここが最も重い工程です。",
                         ]
                     ),
@@ -575,6 +574,8 @@ class RichBootstrapUI:
             stage = payload["stage"]
             reason = payload.get("reason")
             suffix = f" skip: {reason}" if reason else " (skip)"
+            if stage == "train":
+                self._update_stage("features", 1.0, f"{self._stage_label('features')}{suffix}")
             self._update_stage(stage, 1.0, f"{self._stage_label(stage)}{suffix}")
             return
 
@@ -596,7 +597,8 @@ class RichBootstrapUI:
     def _stage_label(self, stage: str) -> str:
         return {
             "fetch": "データ取得",
-            "train": "特徴量作成と学習",
+            "features": "特徴量作成",
+            "train": "モデル学習",
             "predict": "本日の予測",
             "skills": "skill 導入",
         }[stage]
@@ -610,11 +612,17 @@ class RichBootstrapUI:
                     "目安: 数十秒から数分。SQL分析用の履歴日数を増やすほど長くなります。",
                 ]
             ),
+            "features": "\n".join(
+                [
+                    "取得済みデータから、選手・モーター・艇番などの履歴特徴量を作成します。",
+                    "過去成績を時系列で集計するため、CPU とディスクを使います。",
+                    "目安: SQL分析用の履歴日数と学習窓が長いほど時間がかかります。",
+                ]
+            ),
             "train": "\n".join(
                 [
-                    "取得済みデータから特徴量を作成し、ローカルモデルを学習します。",
-                    "特徴量作成では履歴集計を時系列で行うため、CPU とディスクを使います。",
-                    "LightGBM 学習と検証もここで行います。初回 90 日学習は数分から十数分かかることがあります。",
+                    "作成済み特徴量を使って LightGBM モデルを学習し、検証します。",
+                    "特徴量作成とは別工程です。サンプル数が多い場合は数分かかることがあります。",
                 ]
             ),
             "predict": "\n".join(
@@ -635,14 +643,13 @@ class RichBootstrapUI:
     def _update_stage(self, stage: str, ratio: float, description: str) -> None:
         ratio = max(0.0, min(1.0, ratio))
         self.stage_ratios[stage] = ratio
-        task_id = self.stage_task_ids[stage]
-        self.progress.update(task_id, total=100.0, completed=ratio * 100.0, description=description)
         overall = sum(self.STAGE_WEIGHTS[name] * self.stage_ratios[name] for name in self.STAGE_WEIGHTS)
         if self.overall_task_id is not None:
+            step_index = self.STAGE_ORDER.index(stage) + 1
             self.progress.update(
                 self.overall_task_id,
                 completed=overall,
-                description=f"全体進捗 {overall:.1f}%",
+                description=f"{step_index}/{len(self.STAGE_ORDER)} {description} | 全体 {overall:.1f}%",
             )
 
     def _handle_fetch(self, event: str, payload: Dict[str, Any]) -> None:
@@ -679,18 +686,19 @@ class RichBootstrapUI:
 
     def _handle_train(self, event: str, payload: Dict[str, Any]) -> None:
         if event == "train:load_data":
-            self._update_stage("train", 1 / 13, "学習データを読込中。件数が多いほど時間がかかります")
+            self._update_stage("features", 0.05, "学習データを読込中。件数が多いほど時間がかかります")
         elif event == "train:feature_stage":
-            ratio = (1 + payload["step"]) / 13
-            self._update_stage("train", ratio, f"特徴量作成 {payload['label']}。履歴集計中")
+            ratio = min(0.95, payload["step"] / max(payload["total"], 1))
+            self._update_stage("features", ratio, f"特徴量作成 {payload['label']}。履歴集計中")
         elif event == "train:split_data":
-            self._update_stage("train", 9 / 13, "学習/検証に分割中")
+            self._update_stage("features", 1.0, "特徴量作成 完了")
+            self._update_stage("train", 0.15, "学習/検証に分割中")
         elif event == "train:fit_model":
-            self._update_stage("train", 10 / 13, "LightGBM を学習中。ここも数分かかる場合があります")
+            self._update_stage("train", 0.45, "LightGBM を学習中。ここも数分かかる場合があります")
         elif event == "train:evaluate_model":
-            self._update_stage("train", 11 / 13, "検証指標を計算中")
+            self._update_stage("train", 0.70, "検証指標を計算中")
         elif event == "train:save_model":
-            self._update_stage("train", 12 / 13, "モデルを保存中")
+            self._update_stage("train", 0.85, "モデルを保存中")
         elif event in {"train:register_model", "train:registered", "train:complete"}:
             description = "モデルを登録中" if event != "train:complete" else "学習 完了"
             self._update_stage("train", 1.0, description)
@@ -765,7 +773,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--analysis-days",
         type=int,
         default=DEFAULT_ANALYSIS_DAYS,
-        help="SQL分析用にDuckDBへ投入する対象日前の過去日数。training-daysより大きい場合は取得期間も広がります。",
+        help="SQL分析用にDuckDBへ投入する対象日前の過去日数。最小180日。training-daysより大きい場合は取得期間も広がります。",
     )
     parser.add_argument("--retrain-interval-days", type=int, default=7)
     parser.add_argument("--download-missing", action=argparse.BooleanOptionalAction, default=True)
@@ -786,6 +794,8 @@ def build_parser() -> argparse.ArgumentParser:
 def build_config(args: argparse.Namespace) -> BootstrapConfig:
     if args.training_days < 2:
         raise ValueError("training-days は 2 以上にしてください")
+    if args.analysis_days < DEFAULT_ANALYSIS_DAYS:
+        raise ValueError(f"analysis-days は {DEFAULT_ANALYSIS_DAYS} 以上にしてください")
     if args.analysis_days < args.training_days:
         raise ValueError("analysis-days は training-days 以上にしてください")
     if args.retrain_interval_days < 1:

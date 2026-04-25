@@ -69,6 +69,45 @@ has_arg() {
   return 1
 }
 
+select_analysis_days() {
+  local answer
+  local custom
+  cat >/dev/tty <<'EOF'
+SQL分析用にDuckDBへ投入する過去実績日数を選んでください。
+目的により必要な履歴量が変わります。180日が最小で、標準です。
+
+  1) 180日  標準: 直近傾向、今日/明日の予測説明、軽い選手確認
+  2) 365日  年間分析: 選手・モーターの年間傾向、会場別の比較
+  3) 730日  中長期分析: 季節差、会場相性、選手の変化を広めに確認
+  4) 1095日 長期分析: 3年程度の傾向、長期比較、研究用途
+  5) カスタム 180日以上で指定
+
+選択 [1]:
+EOF
+  IFS= read -r answer </dev/tty || true
+  answer="${answer:-1}"
+  case "${answer}" in
+    1) printf '180\n' ;;
+    2) printf '365\n' ;;
+    3) printf '730\n' ;;
+    4) printf '1095\n' ;;
+    5)
+      printf '日数を入力してください [180以上]: ' >/dev/tty
+      IFS= read -r custom </dev/tty || true
+      custom="${custom:-180}"
+      if ! [[ "${custom}" =~ ^[0-9]+$ ]] || [[ "${custom}" -lt 180 ]]; then
+        echo "[NG] SQL分析用の履歴日数は 180 以上の整数にしてください。" >&2
+        exit 1
+      fi
+      printf '%s\n' "${custom}"
+      ;;
+    *)
+      echo "[NG] 選択肢は 1, 2, 3, 4, 5 のいずれかです。" >&2
+      exit 1
+      ;;
+  esac
+}
+
 resolve_bootstrap_args() {
   BOOTSTRAP_ARGS=()
   if [[ "$#" -gt 0 ]]; then
@@ -78,15 +117,17 @@ resolve_bootstrap_args() {
     return
   fi
   if [[ -n "${BOATRACE_ANALYSIS_DAYS:-}" ]]; then
+    if ! [[ "${BOATRACE_ANALYSIS_DAYS}" =~ ^[0-9]+$ ]] || [[ "${BOATRACE_ANALYSIS_DAYS}" -lt 180 ]]; then
+      echo "[NG] BOATRACE_ANALYSIS_DAYS は 180 以上の整数にしてください。" >&2
+      exit 1
+    fi
     BOOTSTRAP_ARGS+=("--analysis-days" "${BOATRACE_ANALYSIS_DAYS}")
     return
   fi
-  if [[ -t 0 ]]; then
-    local answer
-    printf 'SQL分析用にDuckDBへ投入する過去実績は何日分にしますか？ [180]: '
-    read -r answer || true
-    answer="${answer:-180}"
-    BOOTSTRAP_ARGS+=("--analysis-days" "${answer}")
+  if [[ -r /dev/tty && -w /dev/tty ]]; then
+    local selected_days
+    selected_days="$(select_analysis_days)"
+    BOOTSTRAP_ARGS+=("--analysis-days" "${selected_days}")
   fi
 }
 

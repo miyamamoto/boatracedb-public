@@ -55,17 +55,47 @@ function Resolve-BootstrapArgs {
         return $resolved
     }
     if ($env:BOATRACE_ANALYSIS_DAYS) {
+        $envDays = 0
+        if (-not [int]::TryParse($env:BOATRACE_ANALYSIS_DAYS, [ref]$envDays) -or $envDays -lt 180) {
+            throw "BOATRACE_ANALYSIS_DAYS は 180 以上の整数にしてください。"
+        }
         return $resolved + @("--analysis-days", $env:BOATRACE_ANALYSIS_DAYS)
     }
     if ([Console]::IsInputRedirected) {
         return $resolved
     }
 
-    $answer = Read-Host "SQL分析用にDuckDBへ投入する過去実績は何日分にしますか？ [180]"
-    if ([string]::IsNullOrWhiteSpace($answer)) {
-        $answer = "180"
+    Write-Host "SQL分析用にDuckDBへ投入する過去実績日数を選んでください。"
+    Write-Host "目的により必要な履歴量が変わります。180日が最小で、標準です。"
+    Write-Host ""
+    Write-Host "  1) 180日  標準: 直近傾向、今日/明日の予測説明、軽い選手確認"
+    Write-Host "  2) 365日  年間分析: 選手・モーターの年間傾向、会場別の比較"
+    Write-Host "  3) 730日  中長期分析: 季節差、会場相性、選手の変化を広めに確認"
+    Write-Host "  4) 1095日 長期分析: 3年程度の傾向、長期比較、研究用途"
+    Write-Host "  5) カスタム 180日以上で指定"
+    Write-Host ""
+    $answer = Read-Host "選択 [1]"
+    if ([string]::IsNullOrWhiteSpace($answer)) { $answer = "1" }
+
+    switch ($answer) {
+        "1" { $days = "180" }
+        "2" { $days = "365" }
+        "3" { $days = "730" }
+        "4" { $days = "1095" }
+        "5" {
+            $custom = Read-Host "日数を入力してください [180以上]"
+            if ([string]::IsNullOrWhiteSpace($custom)) { $custom = "180" }
+            $customDays = 0
+            if (-not [int]::TryParse($custom, [ref]$customDays) -or $customDays -lt 180) {
+                throw "SQL分析用の履歴日数は 180 以上の整数にしてください。"
+            }
+            $days = $custom
+        }
+        default {
+            throw "選択肢は 1, 2, 3, 4, 5 のいずれかです。"
+        }
     }
-    return $resolved + @("--analysis-days", $answer)
+    return $resolved + @("--analysis-days", $days)
 }
 
 function Get-UvCommand {
