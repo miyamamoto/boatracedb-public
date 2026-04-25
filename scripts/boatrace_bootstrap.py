@@ -542,11 +542,29 @@ class RichBootstrapUI:
                             f"学習期間: {payload['config']['training_start_date']} -> {payload['config']['training_end_date']}",
                             f"再学習間隔: {payload['config']['retrain_interval_days']} 日",
                             f"取得期間: {payload['config']['fetch_start_date']} -> {payload['config']['fetch_end_date']}",
+                            "",
+                            "初回はデータ取得、特徴量作成、LightGBM 学習に時間がかかります。",
+                            "画面下部に全体進捗、ステージ別進捗、現在処理中の内容、経過時間、残り時間の目安を表示します。",
+                            "特徴量作成では選手・モーター・会場などの過去成績を時系列で集計するため、ここが最も重い工程です。",
                         ]
                     ),
                     title="Bootstrap",
                 )
             )
+            return
+
+        if event == "bootstrap:stage_started":
+            stage = payload["stage"]
+            label = payload.get("label", self._stage_label(stage))
+            self.console.print(Panel.fit(self._stage_help(stage), title=f"{label} を開始"))
+            return
+
+        if event == "bootstrap:train_decision":
+            message = payload.get("message", "")
+            if payload.get("should_train"):
+                self.console.print(f"[bold yellow]再学習します:[/bold yellow] {message}")
+            else:
+                self.console.print(f"[green]学習はスキップします:[/green] {message}")
             return
 
         if event == "bootstrap:stage_skipped":
@@ -577,6 +595,37 @@ class RichBootstrapUI:
             "train": "特徴量作成と学習",
             "predict": "本日の予測",
             "skills": "skill 導入",
+        }[stage]
+
+    def _stage_help(self, stage: str) -> str:
+        return {
+            "fetch": "\n".join(
+                [
+                    "リモートまたは cache から番組表、出走表、結果、オッズを取り込みます。",
+                    "初回や未取得日が多い場合はネットワーク待ちが発生します。",
+                    "目安: 数十秒から数分。学習日数を増やすほど長くなります。",
+                ]
+            ),
+            "train": "\n".join(
+                [
+                    "取得済みデータから特徴量を作成し、ローカルモデルを学習します。",
+                    "特徴量作成では履歴集計を時系列で行うため、CPU とディスクを使います。",
+                    "LightGBM 学習と検証もここで行います。初回 90 日学習は数分から十数分かかることがあります。",
+                ]
+            ),
+            "predict": "\n".join(
+                [
+                    "学習済みモデルを使って対象日の各レースを採点します。",
+                    "レースごとに勝率候補と説明用スナップショットを書き出します。",
+                    "目安: 通常は数十秒から数分です。",
+                ]
+            ),
+            "skills": "\n".join(
+                [
+                    "Codex、Claude Code、Claude agent から予測結果を読みやすく使えるように配置します。",
+                    "反映には Codex / Claude Code の再起動が必要です。",
+                ]
+            ),
         }[stage]
 
     def _update_stage(self, stage: str, ratio: float, description: str) -> None:
@@ -626,14 +675,14 @@ class RichBootstrapUI:
 
     def _handle_train(self, event: str, payload: Dict[str, Any]) -> None:
         if event == "train:load_data":
-            self._update_stage("train", 1 / 13, "学習データを読込中")
+            self._update_stage("train", 1 / 13, "学習データを読込中。件数が多いほど時間がかかります")
         elif event == "train:feature_stage":
             ratio = (1 + payload["step"]) / 13
-            self._update_stage("train", ratio, f"特徴量作成 {payload['label']}")
+            self._update_stage("train", ratio, f"特徴量作成 {payload['label']}。履歴集計中")
         elif event == "train:split_data":
             self._update_stage("train", 9 / 13, "学習/検証に分割中")
         elif event == "train:fit_model":
-            self._update_stage("train", 10 / 13, "LightGBM を学習中")
+            self._update_stage("train", 10 / 13, "LightGBM を学習中。ここも数分かかる場合があります")
         elif event == "train:evaluate_model":
             self._update_stage("train", 11 / 13, "検証指標を計算中")
         elif event == "train:save_model":
