@@ -70,8 +70,11 @@ has_arg() {
 }
 
 resolve_bootstrap_args() {
-  BOOTSTRAP_ARGS=("$@")
-  if has_arg "--analysis-days" "${BOOTSTRAP_ARGS[@]}"; then
+  BOOTSTRAP_ARGS=()
+  if [[ "$#" -gt 0 ]]; then
+    BOOTSTRAP_ARGS=("$@")
+  fi
+  if [[ "$#" -gt 0 ]] && has_arg "--analysis-days" "$@"; then
     return
   fi
   if [[ -n "${BOATRACE_ANALYSIS_DAYS:-}" ]]; then
@@ -217,4 +220,8 @@ cat <<'EOF'
      特に「特徴量作成と学習」は履歴集計と LightGBM 学習を行うため時間がかかります。
 
 EOF
-exec "${VENV_DIR}/bin/python" "${ROOT_DIR}/scripts/boatrace_bootstrap.py" "${BOOTSTRAP_ARGS[@]}"
+if [[ "${#BOOTSTRAP_ARGS[@]}" -gt 0 ]]; then
+  exec "${VENV_DIR}/bin/python" "${ROOT_DIR}/scripts/boatrace_bootstrap.py" "${BOOTSTRAP_ARGS[@]}"
+else
+  exec "${VENV_DIR}/bin/python" "${ROOT_DIR}/scripts/boatrace_bootstrap.py"
+fi
