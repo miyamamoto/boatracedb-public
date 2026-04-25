@@ -47,6 +47,10 @@ Use these rough labels when helpful.
 
 Use the query CLI first. These commands are internal; do not mention them in the answer unless the user asks how the data was retrieved.
 
+- Today's predictions, preparing them automatically if missing:
+  `python3 scripts/boatrace_prediction_query.py --format markdown today`
+- Tomorrow's predictions, preparing them automatically if missing:
+  `python3 scripts/boatrace_prediction_query.py --format markdown tomorrow`
 - Latest prediction run:
   `python3 scripts/boatrace_prediction_query.py --format markdown latest`
 - Pipeline status:
@@ -54,9 +58,11 @@ Use the query CLI first. These commands are internal; do not mention them in the
 - Active model:
   `python3 scripts/boatrace_prediction_query.py --format json model`
 - Specific date:
-  `python3 scripts/boatrace_prediction_query.py --format markdown date --target-date YYYY-MM-DD`
+  `python3 scripts/boatrace_prediction_query.py --format markdown --auto-prepare date --target-date YYYY-MM-DD`
 - Specific race:
-  `python3 scripts/boatrace_prediction_query.py --format markdown race --target-date YYYY-MM-DD --venue-code 07 --race-number 12`
+  `python3 scripts/boatrace_prediction_query.py --format markdown --auto-prepare race --target-date YYYY-MM-DD --venue-code 07 --race-number 12`
+
+For normal `today` or `tomorrow` requests, do not tell the user that data is missing before trying the auto-prepare path. If auto-prepare succeeds, answer with the predictions. If it fails, give a short user-facing reason such as `まだ本日の番組データを取得できませんでした`.
 
 ## Dynamic SQL Analysis Path
 
@@ -101,7 +107,7 @@ For normal user-facing answers, do not expose SQL unless the user explicitly ask
 
 ## Refresh Path
 
-Use the local pipeline CLI only when the user explicitly wants refresh or retraining. These are internal operations.
+Use the local pipeline CLI only when the user explicitly wants manual refresh or retraining. These are internal operations. Normal today/tomorrow prediction requests should use the query CLI auto-prepare path above.
 
 - Fetch data into DuckDB from local cache, or add `--download-missing` to fill gaps:
   `python3 scripts/boatrace_local_pipeline.py fetch --start-date YYYY-MM-DD --end-date YYYY-MM-DD --cache-dir data/comprehensive_cache`

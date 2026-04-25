@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict
 
@@ -21,6 +21,7 @@ from scripts.boatrace_analysis_query import (  # noqa: E402
     execute_query,
 )
 from src.pipeline.duckdb_prediction_repository import DuckDBPredictionRepository  # noqa: E402
+from src.pipeline.prediction_auto_prepare import ensure_predictions_for_date  # noqa: E402
 
 
 DEFAULT_DB_PATH = Path("data/boatrace_pipeline.duckdb")
@@ -62,6 +63,17 @@ def _parse_date(value: str):
     return datetime.strptime(value, "%Y-%m-%d").date()
 
 
+def _ensure_prediction_run(target_date: str, *, force: bool = False) -> Dict[str, Any]:
+    parsed_date = _parse_date(target_date)
+    return ensure_predictions_for_date(
+        target_date=parsed_date,
+        db_path=_db_path(),
+        cache_dir=os.environ.get("BOATRACE_CACHE_DIR", "data/comprehensive_cache"),
+        download_missing=True,
+        force=force,
+    )
+
+
 def build_server():
     try:
         from mcp.server.fastmcp import FastMCP
@@ -96,10 +108,24 @@ def build_server():
 
     @mcp.tool()
     def boatrace_predictions_for_date(target_date: str) -> Dict[str, Any]:
-        """Return predictions for a date in YYYY-MM-DD format."""
+        """Return predictions for a date. Missing today/tomorrow predictions are generated automatically."""
         try:
+            ensure_result = _ensure_prediction_run(target_date)
+            if ensure_result.get("success"):
+                return {
+                    "success": True,
+                    "target_date": target_date,
+                    "prepared": bool(ensure_result.get("prepared")),
+                    "prediction_run": _jsonable(ensure_result.get("prediction_run")),
+                }
             payload = _repository().get_predictions_for_date(_parse_date(target_date))
-            return {"success": True, "target_date": target_date, "prediction_run": _jsonable(payload)}
+            return {
+                "success": payload is not None,
+                "target_date": target_date,
+                "prepared": False,
+                "prediction_run": _jsonable(payload),
+                "error": None if payload else ensure_result.get("error"),
+            }
         except ValueError:
             return _error("target_date は YYYY-MM-DD で指定してください。")
         except (duckdb.Error, OSError, FileNotFoundError) as exc:
@@ -107,23 +133,48 @@ def build_server():
 
     @mcp.tool()
     def boatrace_race_prediction(target_date: str, venue_code: str, race_number: int) -> Dict[str, Any]:
-        """Return one race prediction. venue_code is BOATRACE venue code such as 22 for Fukuoka."""
+        """Return one race prediction. Missing today/tomorrow predictions are generated automatically."""
         try:
             normalized_venue = str(venue_code).zfill(2)
+            ensure_result = _ensure_prediction_run(target_date)
             payload = _repository().get_race_prediction(
                 target_date=_parse_date(target_date),
                 venue_code=normalized_venue,
                 race_number=int(race_number),
             )
             return {
-                "success": True,
+                "success": payload is not None,
                 "target_date": target_date,
                 "venue_code": normalized_venue,
                 "race_number": int(race_number),
+                "prepared": bool(ensure_result.get("prepared")),
                 "race_prediction": _jsonable(payload),
+                "error": None if payload else ensure_result.get("error"),
             }
         except ValueError:
             return _error("target_date は YYYY-MM-DD、race_number は整数で指定してください。")
+        except (duckdb.Error, OSError, FileNotFoundError) as exc:
+            return _error(str(exc))
+
+    @mcp.tool()
+    def boatrace_today_predictions() -> Dict[str, Any]:
+        """Generate missing predictions for today if needed, then return them."""
+        return boatrace_predictions_for_date(datetime.now().date().isoformat())
+
+    @mcp.tool()
+    def boatrace_tomorrow_predictions() -> Dict[str, Any]:
+        """Generate missing predictions for tomorrow if needed, then return them."""
+        target_date = (datetime.now().date() + timedelta(days=1)).isoformat()
+        return boatrace_predictions_for_date(target_date)
+
+    @mcp.tool()
+    def boatrace_prepare_predictions(target_date: str, force: bool = False) -> Dict[str, Any]:
+        """Controlled fetch+predict for today/tomorrow only. Does not run arbitrary SQL or retrain."""
+        try:
+            ensure_result = _ensure_prediction_run(target_date, force=bool(force))
+            return _jsonable(ensure_result)
+        except ValueError:
+            return _error("target_date は YYYY-MM-DD で指定してください。")
         except (duckdb.Error, OSError, FileNotFoundError) as exc:
             return _error(str(exc))
 

@@ -56,6 +56,15 @@ bash scripts/install_boatrace_local.sh --training-days 90 --analysis-days 365
 boatrace-prediction-query --format markdown latest
 ```
 
+本日または明日の予測を見る:
+
+```bash
+boatrace-prediction-query --format markdown today
+boatrace-prediction-query --format markdown tomorrow
+```
+
+本日/明日分がまだ無い場合は、既存モデルを使って `fetch -> predict` を自動実行してから表示します。再学習はここでは行わず、週次再学習に任せます。
+
 モデルとデータの状態を見る:
 
 ```bash

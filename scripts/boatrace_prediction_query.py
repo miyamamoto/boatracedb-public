@@ -5,13 +5,14 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.pipeline.duckdb_prediction_repository import DuckDBPredictionRepository
+from src.pipeline.prediction_auto_prepare import ensure_predictions_for_date
 
 
 def parse_date(value: str):
@@ -21,12 +22,23 @@ def parse_date(value: str):
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Query local BoatRace predictions from DuckDB")
     parser.add_argument("--db-path", default="data/boatrace_pipeline.duckdb")
+    parser.add_argument("--cache-dir", default="data/comprehensive_cache")
+    parser.add_argument("--download-missing", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument(
+        "--auto-prepare",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Generate missing predictions before reading. Defaults to on for today/tomorrow commands.",
+    )
+    parser.add_argument("--force-prepare", action="store_true")
     parser.add_argument("--format", choices=["json", "markdown"], default="json")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser("status")
     subparsers.add_parser("latest")
     subparsers.add_parser("model")
+    subparsers.add_parser("today")
+    subparsers.add_parser("tomorrow")
 
     date_parser = subparsers.add_parser("date")
     date_parser.add_argument("--target-date", required=True, type=parse_date)
@@ -178,10 +190,63 @@ def render_output(command: str, payload: Any, output_format: str) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=2, default=str)
 
 
+def _resolve_target_date(command: str, args: argparse.Namespace) -> Optional[date]:
+    if command == "today":
+        return date.today()
+    if command == "tomorrow":
+        return date.today() + timedelta(days=1)
+    if command in {"date", "race"}:
+        return args.target_date
+    return None
+
+
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
     db_path = Path(args.db_path)
+    target_date = _resolve_target_date(args.command, args)
+    should_auto_prepare = (
+        args.auto_prepare
+        if args.auto_prepare is not None
+        else args.command in {"today", "tomorrow"}
+    )
+
+    ensure_result = None
+    if target_date is not None and should_auto_prepare:
+        ensure_result = ensure_predictions_for_date(
+            target_date=target_date,
+            db_path=db_path,
+            cache_dir=args.cache_dir,
+            download_missing=args.download_missing,
+            force=args.force_prepare,
+        )
+        if ensure_result.get("success"):
+            payload = ensure_result.get("prediction_run")
+            if args.command == "race":
+                payload = None
+                for race in (ensure_result.get("prediction_run") or {}).get("races", []):
+                    if race["venue_code"] == args.venue_code and int(race["race_number"]) == int(args.race_number):
+                        race["prediction_run_id"] = ensure_result["prediction_run"]["id"]
+                        race["target_date"] = ensure_result["prediction_run"]["target_date"]
+                        race["model_id"] = ensure_result["prediction_run"].get("model_id")
+                        race["model_path"] = ensure_result["prediction_run"].get("model_path")
+                        payload = race
+                        break
+            if args.format == "json":
+                print(json.dumps({"ensure": ensure_result, "payload": payload}, ensure_ascii=False, indent=2, default=str))
+            else:
+                prefix = ""
+                if ensure_result.get("prepared"):
+                    prefix = f"対象日 {target_date.isoformat()} の予測を新しく生成しました。\n\n"
+                print(prefix + render_output("race" if args.command == "race" else "date", payload, args.format))
+            return 0
+        if args.command in {"today", "tomorrow"}:
+            if args.format == "json":
+                print(json.dumps({"ensure": ensure_result, "payload": None}, ensure_ascii=False, indent=2, default=str))
+            else:
+                print(f"対象日 {target_date.isoformat()} の予測を準備できませんでした: {ensure_result.get('error')}")
+            return 2
+
     if not db_path.exists():
         parser.error(
             f"DuckDB not found: {db_path}. Run boatrace-local-pipeline status or fetch first."
@@ -195,16 +260,16 @@ def main() -> int:
         payload = repository.get_prediction_run_details(latest["id"]) if latest else None
     elif args.command == "model":
         payload = repository.get_active_model()
-    elif args.command == "date":
-        payload = repository.get_predictions_for_date(args.target_date)
+    elif args.command in {"date", "today", "tomorrow"}:
+        payload = repository.get_predictions_for_date(target_date)
     else:
         payload = repository.get_race_prediction(
-            target_date=args.target_date,
+            target_date=target_date,
             venue_code=args.venue_code,
             race_number=args.race_number,
         )
 
-    print(render_output(args.command, payload, args.format))
+    print(render_output("race" if args.command == "race" else ("date" if args.command in {"today", "tomorrow"} else args.command), payload, args.format))
     return 0
 
 
