@@ -169,7 +169,8 @@ def test_install_mcp_preserves_existing_claude_config(tmp_path: Path) -> None:
     assert "existing" in code_payload["projects"]["/tmp/other"]["mcpServers"]
     server = code_payload["projects"][str(project_root)]["mcpServers"]["boatrace-local"]
     assert server["type"] == "stdio"
-    assert server["env"]["BOATRACE_DB_PATH"].endswith("data/boatrace_pipeline.duckdb")
+    assert Path(server["env"]["BOATRACE_DB_PATH"]).name == "boatrace_pipeline.duckdb"
+    assert Path(server["env"]["BOATRACE_DB_PATH"]).parent.name == "data"
     assert "jvlink-remote" in desktop_payload["mcpServers"]
     assert "boatrace-local" in desktop_payload["mcpServers"]
 
