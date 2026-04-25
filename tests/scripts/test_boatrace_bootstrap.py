@@ -188,7 +188,7 @@ def test_mcp_config_uv_fallback_includes_runtime_dependencies(tmp_path: Path, mo
 
     server = runner.build_mcp_server_config()
 
-    assert server["command"] == "/opt/homebrew/bin/uv"
+    assert Path(server["command"]).name == "uv"
     assert server["args"][:3] == ["run", "--directory", str(project_root)]
     assert "duckdb>=1.0.0" in server["args"]
     assert "mcp>=1.9.0,<2" in server["args"]
