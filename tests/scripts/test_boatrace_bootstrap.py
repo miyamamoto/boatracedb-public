@@ -190,8 +190,11 @@ def test_mcp_config_uv_fallback_includes_runtime_dependencies(tmp_path: Path, mo
 
     assert Path(server["command"]).name == "uv"
     assert server["args"][:3] == ["run", "--directory", str(project_root)]
-    assert "duckdb>=1.0.0" in server["args"]
-    assert "mcp>=1.9.0,<2" in server["args"]
+    assert "--with-requirements" in server["args"]
+    assert str(project_root / "requirements.txt") in server["args"]
+    assert "--with-editable" in server["args"]
+    assert str(project_root) in server["args"]
+    assert "--quiet" in server["args"]
     assert server["args"][-2] == "python"
     assert Path(server["args"][-1]).name == "boatrace_mcp_server.py"
     assert Path(server["args"][-1]).parent.name == "scripts"
