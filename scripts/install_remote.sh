@@ -9,6 +9,46 @@ log() {
   printf '[boatrace] %s\n' "$1"
 }
 
+print_python_install_help() {
+  cat >&2 <<'EOF'
+
+Python 3.11 以上をインストールしてから、同じコマンドを再実行してください。
+
+macOS:
+  brew install python@3.11
+  または https://www.python.org/downloads/ から Python 3.11+ を入れてください。
+
+Ubuntu / Debian:
+  sudo apt update
+  sudo apt install -y python3 python3-venv python3-pip
+
+Fedora:
+  sudo dnf install -y python3 python3-pip
+
+Windows:
+  この curl | bash 版は macOS / Linux 向けです。
+  Windows では Python 3.11+ を入れたうえで、PowerShell 版 installer を使ってください。
+EOF
+}
+
+print_git_install_help() {
+  cat >&2 <<'EOF'
+
+git をインストールしてから、同じコマンドを再実行してください。
+
+macOS:
+  xcode-select --install
+  または brew install git
+
+Ubuntu / Debian:
+  sudo apt update
+  sudo apt install -y git
+
+Fedora:
+  sudo dnf install -y git
+EOF
+}
+
 format_elapsed() {
   local seconds="$1"
   printf "%02d:%02d" "$((seconds / 60))" "$((seconds % 60))"
@@ -43,7 +83,10 @@ run_with_spinner() {
 
 need_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
-    echo "必要なコマンドが見つかりません: $1" >&2
+    echo "[NG] 必要なコマンドが見つかりません: $1" >&2
+    if [[ "$1" == "git" ]]; then
+      print_git_install_help
+    fi
     exit 1
   fi
 }
@@ -65,12 +108,24 @@ if command -v python3 >/dev/null 2>&1; then
 elif command -v python >/dev/null 2>&1; then
   PYTHON_BIN="python"
 else
-  echo "Python 3.11 以上が必要です。" >&2
+  echo "[NG] Python が見つかりません。" >&2
+  echo "     BoatRace Local Predictor には Python 3.11 以上が必要です。" >&2
+  print_python_install_help
   exit 1
 fi
 
 if ! "${PYTHON_BIN}" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then
-  echo "Python 3.11 以上が必要です。" >&2
+  DETECTED_VERSION="$("${PYTHON_BIN}" -c 'import sys; print(".".join(map(str, sys.version_info[:3])))' 2>/dev/null || echo unknown)"
+  echo "[NG] Python 3.11 以上が必要です。" >&2
+  echo "     検出された Python: ${PYTHON_BIN} (${DETECTED_VERSION})" >&2
+  print_python_install_help
+  exit 1
+fi
+
+if ! "${PYTHON_BIN}" -m venv --help >/dev/null 2>&1; then
+  echo "[NG] Python の venv モジュールが使えません。" >&2
+  echo "     仮想環境を作るために venv が必要です。" >&2
+  print_python_install_help
   exit 1
 fi
 

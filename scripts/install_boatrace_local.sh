@@ -13,6 +13,24 @@ format_elapsed() {
   printf "%02d:%02d" "$((seconds / 60))" "$((seconds % 60))"
 }
 
+print_python_install_help() {
+  cat >&2 <<'EOF'
+
+Python 3.11 以上と venv をインストールしてから、再実行してください。
+
+macOS:
+  brew install python@3.11
+  または https://www.python.org/downloads/ から Python 3.11+ を入れてください。
+
+Ubuntu / Debian:
+  sudo apt update
+  sudo apt install -y python3 python3-venv python3-pip
+
+Fedora:
+  sudo dnf install -y python3 python3-pip
+EOF
+}
+
 print_header() {
   cat <<'EOF'
 BoatRace Local Predictor installer
@@ -110,12 +128,24 @@ print_header
 resolve_bootstrap_args "$@"
 
 if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
-  echo "python3 が見つかりません。Python 3.11 以上を用意してください。"
+  echo "[NG] ${PYTHON_BIN} が見つかりません。" >&2
+  echo "     BoatRace Local Predictor には Python 3.11 以上が必要です。" >&2
+  print_python_install_help
   exit 1
 fi
 
 if ! "${PYTHON_BIN}" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then
-  echo "Python 3.11 以上が必要です。"
+  DETECTED_VERSION="$("${PYTHON_BIN}" -c 'import sys; print(".".join(map(str, sys.version_info[:3])))' 2>/dev/null || echo unknown)"
+  echo "[NG] Python 3.11 以上が必要です。" >&2
+  echo "     検出された Python: ${PYTHON_BIN} (${DETECTED_VERSION})" >&2
+  print_python_install_help
+  exit 1
+fi
+
+if ! "${PYTHON_BIN}" -m venv --help >/dev/null 2>&1; then
+  echo "[NG] Python の venv モジュールが使えません。" >&2
+  echo "     仮想環境を作るために venv が必要です。" >&2
+  print_python_install_help
   exit 1
 fi
 
