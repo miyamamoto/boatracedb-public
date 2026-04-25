@@ -61,6 +61,13 @@ BoatRace Local Predictor installer
   - 180日分ではデータ取得だけで約1時間かかる前提です。
   - 180日分の初回セットアップ全体は、おおよそ1.5から2.5時間を見込んでください。
   - 詳細ログは logs/bootstrap-install/ に保存します。
+
+データ取得:
+  - 既存の DuckDB と data/comprehensive_cache を優先して使います。
+  - cache にある日付はリモート取得しません。
+  - --no-download-missing または --cache-only を付けると、リモートデータ取得を行いません。
+  - remote installer の更新モードでは、既定で --no-download-missing が付与されます。
+  - 初回だけは、cache に無い必要データを不足分だけ取得するため時間がかかります。
 EOF
   printf '\n'
 }
@@ -269,6 +276,12 @@ cat <<'EOF'
      特に「特徴量作成と学習」は履歴集計と LightGBM 学習を行うため時間がかかります。
 
 EOF
+if has_arg "--no-download-missing" "${BOOTSTRAP_ARGS[@]}" || has_arg "--cache-only" "${BOOTSTRAP_ARGS[@]}"; then
+  echo "     データ取得は cache/DuckDB 優先です。不足データがあってもリモート取得しません。"
+else
+  echo "     データ取得は cache 優先です。cache に無い必要日だけリモート取得します。"
+fi
+echo
 if [[ "${#BOOTSTRAP_ARGS[@]}" -gt 0 ]]; then
   exec "${VENV_DIR}/bin/python" "${ROOT_DIR}/scripts/boatrace_bootstrap.py" "${BOOTSTRAP_ARGS[@]}"
 else

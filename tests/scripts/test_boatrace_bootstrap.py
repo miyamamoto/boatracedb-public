@@ -116,6 +116,15 @@ def test_build_config_rejects_analysis_days_below_minimum() -> None:
         build_config(args)
 
 
+def test_build_config_cache_only_disables_remote_downloads() -> None:
+    parser = build_parser()
+    args = parser.parse_args(["--target-date", "2026-04-23", "--cache-only"])
+
+    config = build_config(args)
+
+    assert config.download_missing is False
+
+
 def test_install_skills_copies_codex_and_claude_assets(tmp_path: Path) -> None:
     project_root = Path(__file__).resolve().parents[2]
     config = _config_with_temp_integrations(

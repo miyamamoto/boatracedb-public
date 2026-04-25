@@ -5,6 +5,7 @@ REPO_SLUG="${BOATRACE_REPO_SLUG:-miyamamoto/boatracedb-public}"
 BRANCH="${BOATRACE_BRANCH:-main}"
 INSTALL_DIR="${BOATRACE_INSTALL_DIR:-${HOME}/boatracedb}"
 ARCHIVE_URL="${BOATRACE_ARCHIVE_URL:-https://github.com/${REPO_SLUG}/archive/refs/heads/${BRANCH}.tar.gz}"
+BOOTSTRAP_ARGS=("$@")
 
 log() {
   printf '[boatrace] %s\n' "$1"
@@ -49,6 +50,17 @@ need_command() {
   fi
 }
 
+has_bootstrap_arg() {
+  local name="$1"
+  shift
+  for arg in "$@"; do
+    if [[ "${arg}" == "${name}" || "${arg}" == "${name}="* ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 need_command bash
 need_command curl
 need_command tar
@@ -58,9 +70,17 @@ need_command cp
 cat <<'EOF'
 BoatRace Local Predictor remote installer
 
-このコマンドはアプリ一式をダウンロードして展開し、ローカル bootstrap を起動します。
+このコマンドはアプリ本体だけを GitHub から取得し、~/boatracedb に配置します。
 git や Python を事前に入れておく必要はありません。
-bootstrap ではデータ取得、特徴量作成、モデル学習、予測、skill/MCP 導入まで実行します。
+
+データ取得の考え方:
+  - 既存の DuckDB と data/comprehensive_cache は削除しません。
+  - fetch はまずローカル cache を読み、cache にある日付はリモート取得しません。
+  - 初回インストールでは、必要な不足データだけリモート取得します。
+  - 既存インストールの更新では、明示指定がなければリモートデータ取得を避けます。
+  - 更新時に不足データも取りたい場合は --download-missing を付けてください。
+
+bootstrap では必要に応じて、データ確認、特徴量作成、モデル学習、予測、skill/MCP 導入を行います。
 初回は特徴量作成と学習に時間がかかるため、進捗表示を見ながら待ってください。
 
 免責:
@@ -95,11 +115,23 @@ if [[ -z "${EXTRACTED_DIR}" || ! -d "${EXTRACTED_DIR}" ]]; then
   exit 1
 fi
 
+EXISTING_INSTALL=0
 if [[ -d "${INSTALL_DIR}" ]]; then
+  EXISTING_INSTALL=1
   log "既存インストールを更新します: ${INSTALL_DIR}"
+  log "既存の data/ と models/ と .venv は保持します"
+  if [[ "${BOATRACE_UPDATE_DOWNLOAD_MISSING:-0}" != "1" ]] \
+    && ! has_bootstrap_arg "--download-missing" "${BOOTSTRAP_ARGS[@]}" \
+    && ! has_bootstrap_arg "--no-download-missing" "${BOOTSTRAP_ARGS[@]}" \
+    && ! has_bootstrap_arg "--cache-only" "${BOOTSTRAP_ARGS[@]}"; then
+    BOOTSTRAP_ARGS+=("--no-download-missing")
+    log "更新モード: リモートデータ取得を避け、ローカル cache/DuckDB を優先します"
+    log "不足データも取得したい場合は、次回 --download-missing を付けてください"
+  fi
 else
   log "インストール先を作成します: ${INSTALL_DIR}"
   mkdir -p "${INSTALL_DIR}"
+  log "初回モード: cache に無い必要データは不足分だけリモート取得します"
 fi
 
 run_with_spinner "アプリファイルを配置" cp -R "${EXTRACTED_DIR}/." "${INSTALL_DIR}/"
@@ -110,4 +142,7 @@ if [[ "${BOATRACE_SKIP_BOOTSTRAP:-}" == "1" ]]; then
 fi
 
 log "ローカル予測環境を初期化します"
-exec bash "${INSTALL_DIR}/scripts/install_boatrace_local.sh" "$@"
+if [[ "${EXISTING_INSTALL}" == "1" ]]; then
+  log "bootstrap 引数: ${BOOTSTRAP_ARGS[*]:-(なし)}"
+fi
+exec bash "${INSTALL_DIR}/scripts/install_boatrace_local.sh" "${BOOTSTRAP_ARGS[@]}"

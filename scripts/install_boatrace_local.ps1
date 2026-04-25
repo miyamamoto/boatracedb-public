@@ -39,6 +39,12 @@ function Show-InstallerHeader {
     Write-Host "  - 180日分の初回セットアップ全体は、おおよそ1.5から2.5時間を見込んでください。"
     Write-Host "  - 詳細ログは logs\bootstrap-install\ に保存します。"
     Write-Host ""
+    Write-Host "データ取得:"
+    Write-Host "  - 既存の DuckDB と data\comprehensive_cache を優先して使います。"
+    Write-Host "  - cache にある日付はリモート取得しません。"
+    Write-Host "  - --no-download-missing または --cache-only を付けると、リモートデータ取得を行いません。"
+    Write-Host "  - 初回だけは、cache に無い必要データを不足分だけ取得するため時間がかかります。"
+    Write-Host ""
 }
 
 function Test-BootstrapArg {
@@ -241,6 +247,11 @@ try {
     Write-Host "[4/7-7/7] データ取得、特徴量作成、学習、予測、skill/MCP 導入へ進みます。"
     Write-Host "     ここからは画面に全体進捗、ステージ別進捗、現在処理中の内容を表示します。"
     Write-Host "     特に「特徴量作成と学習」は履歴集計と LightGBM 学習を行うため時間がかかります。"
+    if (Test-BootstrapArg -Args $EffectiveBootstrapArgs -Name "--no-download-missing" -or Test-BootstrapArg -Args $EffectiveBootstrapArgs -Name "--cache-only") {
+        Write-Host "     データ取得は cache/DuckDB 優先です。不足データがあってもリモート取得しません。"
+    } else {
+        Write-Host "     データ取得は cache 優先です。cache に無い必要日だけリモート取得します。"
+    }
     Write-Host ""
 
     & $venvPython (Join-Path $RootDir "scripts\boatrace_bootstrap.py") @EffectiveBootstrapArgs

@@ -131,6 +131,8 @@ DuckDB には主に次のテーブルが入ります。
 - 取得頻度は DuckDB ローカル版では手動
 - `fetch` は `data/comprehensive_cache` を優先して読み込む
 - 不足日だけリモート取得したい場合は `--download-missing` を使う
+- 既存インストールを remote installer で更新する場合は、既定で `--no-download-missing` が付与され、リモートデータ取得を避ける
+- 手元の cache だけで進めたい場合は `--cache-only` を使う
 
 旧実装で作った DuckDB には pre-race safe テーブルがない場合があります。その場合は `fetch` を再実行して、schedule/results 分離済みのテーブルを作り直してください。
 
@@ -180,6 +182,7 @@ boatrace-local-pipeline fetch \
 
 - `--cache-dir`: cache の読み込み元を変更する
 - `--download-missing`: cache にない日付だけリモート取得する
+- `--cache-only`: cache と既存 DuckDB だけを使い、リモートデータ取得を行わない
 - `--dry-run`: 取得対象だけ確認して保存しない
 
 例:

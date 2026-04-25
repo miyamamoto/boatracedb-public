@@ -997,6 +997,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--retrain-interval-days", type=int, default=7)
     parser.add_argument("--download-missing", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument(
+        "--cache-only",
+        action="store_true",
+        help="リモートから不足データを取得せず、既存 DuckDB と cache だけを使います。",
+    )
     parser.add_argument("--install-codex-skills", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--install-claude-skills", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--install-claude-agents", action=argparse.BooleanOptionalAction, default=True)
@@ -1030,7 +1035,7 @@ def build_config(args: argparse.Namespace) -> BootstrapConfig:
         training_days=args.training_days,
         analysis_days=args.analysis_days,
         retrain_interval_days=args.retrain_interval_days,
-        download_missing=args.download_missing,
+        download_missing=False if args.cache_only else args.download_missing,
         install_codex_skills=args.install_codex_skills,
         install_claude_skills=args.install_claude_skills,
         install_claude_agents=args.install_claude_agents,

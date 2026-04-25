@@ -25,6 +25,20 @@ curl -fsSL https://raw.githubusercontent.com/miyamamoto/boatracedb-public/main/s
 curl -fsSL https://raw.githubusercontent.com/miyamamoto/boatracedb-public/main/scripts/install_remote.sh | bash -s -- --target-date 2026-04-24 --training-days 90
 ```
 
+既に `~/boatracedb` がある状態で同じコマンドを実行すると、アプリ本体と skill/MCP を更新します。既存の DuckDB、cache、モデル、予測結果は削除しません。更新時は既定でリモートデータ取得を避け、ローカルの `data/comprehensive_cache` と DuckDB を優先します。
+
+更新時に不足データも取得したい場合:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/miyamamoto/boatracedb-public/main/scripts/install_remote.sh | bash -s -- --download-missing
+```
+
+初回でもリモートデータ取得を避け、手元の cache だけで進めたい場合:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/miyamamoto/boatracedb-public/main/scripts/install_remote.sh | bash -s -- --cache-only
+```
+
 Windows PowerShell:
 
 ```powershell
@@ -34,6 +48,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install_boatrace_local.ps1
 ```
 
 初回導入では、アプリ一式の展開、アプリ専用 Python 環境作成、依存関係導入、データ取得、特徴量作成、モデル学習、予測、skill/agent 配置、Claude MCP 登録まで実行します。既定の学習期間は直近 90 日、再学習間隔は 7 日です。
+
+データ取得は cache 優先です。`data/comprehensive_cache` にある日付はリモート取得せず、足りない日付だけを取得対象にします。更新時は `--download-missing` を明示しない限り、不足データのリモート取得は行いません。
 
 インストール中はスピナー、全体進捗、現在の処理、経過時間、残り時間の目安を表示します。初回は Python runtime 取得、DuckDB / LightGBM などの依存導入、データ取得、特徴量作成、LightGBM 学習に時間がかかります。
 
