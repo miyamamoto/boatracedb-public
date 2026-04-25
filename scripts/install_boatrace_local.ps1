@@ -24,9 +24,44 @@ function Show-InstallerHeader {
     Write-Host ""
     Write-Host "注意:"
     Write-Host "  - 初回はデータ取得、特徴量作成、LightGBM 学習に時間がかかります。"
+    Write-Host "  - SQL分析用に投入する過去データ量もこのあと確認します。"
     Write-Host "  - 90日学習では端末やネットワークにより数分から十数分程度かかることがあります。"
     Write-Host "  - 詳細ログは logs\bootstrap-install\ に保存します。"
     Write-Host ""
+}
+
+function Test-BootstrapArg {
+    param(
+        [string[]]$Args,
+        [string]$Name
+    )
+    foreach ($arg in $Args) {
+        if ($arg -eq $Name -or $arg.StartsWith("${Name}=")) {
+            return $true
+        }
+    }
+    return $false
+}
+
+function Resolve-BootstrapArgs {
+    param([string[]]$Args)
+
+    $resolved = @($Args)
+    if (Test-BootstrapArg -Args $resolved -Name "--analysis-days") {
+        return $resolved
+    }
+    if ($env:BOATRACE_ANALYSIS_DAYS) {
+        return $resolved + @("--analysis-days", $env:BOATRACE_ANALYSIS_DAYS)
+    }
+    if ([Console]::IsInputRedirected) {
+        return $resolved
+    }
+
+    $answer = Read-Host "SQL分析用にDuckDBへ投入する過去実績は何日分にしますか？ [180]"
+    if ([string]::IsNullOrWhiteSpace($answer)) {
+        $answer = "180"
+    }
+    return $resolved + @("--analysis-days", $answer)
 }
 
 function Get-PythonCommand {
@@ -100,6 +135,7 @@ if ($pythonCmd.Length -gt 1) {
 Push-Location $RootDir
 try {
     Show-InstallerHeader
+    $EffectiveBootstrapArgs = Resolve-BootstrapArgs -Args $BootstrapArgs
 
     $versionCheckArgs = $pythonArgs + @("-c", "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)")
     & $pythonExe @versionCheckArgs
@@ -149,7 +185,7 @@ try {
     Write-Host "     特に「特徴量作成と学習」は履歴集計と LightGBM 学習を行うため時間がかかります。"
     Write-Host ""
 
-    & $venvPython (Join-Path $RootDir "scripts\boatrace_bootstrap.py") @BootstrapArgs
+    & $venvPython (Join-Path $RootDir "scripts\boatrace_bootstrap.py") @EffectiveBootstrapArgs
     exit $LASTEXITCODE
 } finally {
     Pop-Location

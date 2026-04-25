@@ -85,7 +85,7 @@ class DummyPipeline:
 
 
 def test_bootstrap_config_derives_expected_windows() -> None:
-    config = BootstrapConfig(target_date=date(2026, 4, 23), training_days=90)
+    config = BootstrapConfig(target_date=date(2026, 4, 23), training_days=90, analysis_days=90)
 
     assert config.fetch_start_date == date(2026, 1, 23)
     assert config.fetch_end_date == date(2026, 4, 23)

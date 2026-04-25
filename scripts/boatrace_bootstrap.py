@@ -43,6 +43,7 @@ except ImportError:  # pragma: no cover
 
 DEFAULT_DB_PATH = "data/boatrace_pipeline.duckdb"
 DEFAULT_CACHE_DIR = "data/comprehensive_cache"
+DEFAULT_ANALYSIS_DAYS = 180
 
 
 @dataclass
@@ -51,6 +52,7 @@ class BootstrapConfig:
     cache_dir: str = DEFAULT_CACHE_DIR
     target_date: date = field(default_factory=date.today)
     training_days: int = 90
+    analysis_days: int = DEFAULT_ANALYSIS_DAYS
     retrain_interval_days: int = 7
     download_missing: bool = True
     install_codex_skills: bool = True
@@ -74,7 +76,7 @@ class BootstrapConfig:
 
     @property
     def fetch_start_date(self) -> date:
-        return self.training_start_date
+        return self.target_date - timedelta(days=max(self.training_days, self.analysis_days))
 
     @property
     def fetch_end_date(self) -> date:
@@ -85,6 +87,7 @@ class BootstrapConfig:
         payload["target_date"] = self.target_date.isoformat()
         payload["training_start_date"] = self.training_start_date.isoformat()
         payload["training_end_date"] = self.training_end_date.isoformat()
+        payload["analysis_days"] = self.analysis_days
         payload["fetch_start_date"] = self.fetch_start_date.isoformat()
         payload["fetch_end_date"] = self.fetch_end_date.isoformat()
         payload["retrain_interval_days"] = self.retrain_interval_days
@@ -540,6 +543,7 @@ class RichBootstrapUI:
                             "BoatRace ローカル bootstrap を開始します。",
                             f"対象日: {payload['config']['target_date']}",
                             f"学習期間: {payload['config']['training_start_date']} -> {payload['config']['training_end_date']}",
+                            f"SQL分析用の履歴投入量: 直近 {payload['config']['analysis_days']} 日",
                             f"再学習間隔: {payload['config']['retrain_interval_days']} 日",
                             f"取得期間: {payload['config']['fetch_start_date']} -> {payload['config']['fetch_end_date']}",
                             "",
@@ -603,7 +607,7 @@ class RichBootstrapUI:
                 [
                     "リモートまたは cache から番組表、出走表、結果、オッズを取り込みます。",
                     "初回や未取得日が多い場合はネットワーク待ちが発生します。",
-                    "目安: 数十秒から数分。学習日数を増やすほど長くなります。",
+                    "目安: 数十秒から数分。SQL分析用の履歴日数を増やすほど長くなります。",
                 ]
             ),
             "train": "\n".join(
@@ -757,6 +761,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cache-dir", default=DEFAULT_CACHE_DIR)
     parser.add_argument("--target-date", type=parse_date, default=date.today())
     parser.add_argument("--training-days", type=int, default=90)
+    parser.add_argument(
+        "--analysis-days",
+        type=int,
+        default=DEFAULT_ANALYSIS_DAYS,
+        help="SQL分析用にDuckDBへ投入する対象日前の過去日数。training-daysより大きい場合は取得期間も広がります。",
+    )
     parser.add_argument("--retrain-interval-days", type=int, default=7)
     parser.add_argument("--download-missing", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--install-codex-skills", action=argparse.BooleanOptionalAction, default=True)
@@ -776,6 +786,8 @@ def build_parser() -> argparse.ArgumentParser:
 def build_config(args: argparse.Namespace) -> BootstrapConfig:
     if args.training_days < 2:
         raise ValueError("training-days は 2 以上にしてください")
+    if args.analysis_days < args.training_days:
+        raise ValueError("analysis-days は training-days 以上にしてください")
     if args.retrain_interval_days < 1:
         raise ValueError("retrain-interval-days は 1 以上にしてください")
     return BootstrapConfig(
@@ -783,6 +795,7 @@ def build_config(args: argparse.Namespace) -> BootstrapConfig:
         cache_dir=args.cache_dir,
         target_date=args.target_date,
         training_days=args.training_days,
+        analysis_days=args.analysis_days,
         retrain_interval_days=args.retrain_interval_days,
         download_missing=args.download_missing,
         install_codex_skills=args.install_codex_skills,

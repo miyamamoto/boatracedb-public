@@ -33,6 +33,12 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install_boatrace_local.ps1
 
 インストール中はスピナー、全体進捗、ステージ別進捗、経過時間、残り時間の目安を表示します。初回はデータ取得、特徴量作成、LightGBM 学習に時間がかかります。特に特徴量作成では、選手・モーター・会場などの過去成績を時系列で集計するため、端末性能やネットワーク状況によって数分から十数分程度かかることがあります。
 
+セットアップ時は、学習期間とは別に SQL 分析用へ投入する過去実績日数も指定できます。未指定の場合は既定で 180 日分を取得します。対話実行では installer が確認します。
+
+```bash
+bash scripts/install_boatrace_local.sh --training-days 90 --analysis-days 365
+```
+
 ## 使い方
 
 最新予測を見る:
@@ -45,6 +51,18 @@ boatrace-prediction-query --format markdown latest
 
 ```bash
 boatrace-local-pipeline status
+```
+
+SQL 分析用の安全なビューを見る:
+
+```bash
+boatrace-analysis-query schema
+```
+
+選手成績を read-only SQL で分析する:
+
+```bash
+boatrace-analysis-query query --sql "SELECT racer_name, starts, win_rate, top3_rate FROM analysis_racer_summary ORDER BY win_rate DESC LIMIT 20"
 ```
 
 指定日の予測を作る:
