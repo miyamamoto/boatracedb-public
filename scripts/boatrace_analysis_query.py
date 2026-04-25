@@ -14,6 +14,7 @@ import duckdb
 DEFAULT_DB_PATH = "data/boatrace_pipeline.duckdb"
 DEFAULT_LIMIT = 100
 MAX_LIMIT = 1000
+MAX_MARKDOWN_CELL_CHARS = 500
 
 ALLOWED_RELATION_PREFIXES = ("analysis_",)
 BLOCKED_KEYWORDS = {
@@ -212,6 +213,17 @@ def _analysis_schema(conn: duckdb.DuckDBPyConnection) -> List[Dict[str, Any]]:
     return [{"view": view, "columns": columns} for view, columns in grouped.items()]
 
 
+def _format_markdown_cell(value: Any) -> str:
+    if value is None:
+        return ""
+    text = str(value)
+    text = re.sub(r"[\r\n]+", " ", text).strip()
+    text = text.replace("|", r"\|")
+    if len(text) > MAX_MARKDOWN_CELL_CHARS:
+        text = text[:MAX_MARKDOWN_CELL_CHARS - 1].rstrip() + "…"
+    return text
+
+
 def _render_markdown(rows: Sequence[Dict[str, Any]], limit: int) -> str:
     if not rows:
         return "該当する行はありません。"
@@ -221,7 +233,7 @@ def _render_markdown(rows: Sequence[Dict[str, Any]], limit: int) -> str:
         "| " + " | ".join(["---"] * len(columns)) + " |",
     ]
     for row in rows[:limit]:
-        values = [str(row.get(column, "")) for column in columns]
+        values = [_format_markdown_cell(row.get(column, "")) for column in columns]
         lines.append("| " + " | ".join(values) + " |")
     return "\n".join(lines)
 
