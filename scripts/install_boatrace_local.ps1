@@ -32,6 +32,8 @@ function Show-InstallerHeader {
     Write-Host "  - Claude Code / Claude Desktop には読み取り専用の boatrace-local MCP server を登録します。"
     Write-Host "  - このシステムの予測、買い目候補、SQL分析結果、番組表、説明文は参考情報です。"
     Write-Host "  - 開発者および配布者は出力の正確性や利用結果について一切の責任を負いません。"
+    Write-Host "  - 回収率はオッズ、購入点数、資金配分、直前情報に左右され、プラス収支は保証されません。"
+    Write-Host "  - 予測はあくまでレースを楽しむための材料です。"
     Write-Host "  - 舟券購入やその他の判断は、必ず利用者自身の責任で行ってください。"
     Write-Host "  - 180日分ではデータ取得だけで約1時間かかる前提です。"
     Write-Host "  - 180日分の初回セットアップ全体は、おおよそ1.5から2.5時間を見込んでください。"

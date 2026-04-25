@@ -19,6 +19,8 @@ The user-facing goal is not to expose backend implementation. The user wants eas
 - If the user asks for many races, summarize the interesting ones first instead of dumping raw data.
 - If the user asks for buy candidates, group them in a betting-friendly way and keep the wording practical.
 - If odds are unavailable, say that simply and continue with probability-based interpretation rather than surfacing implementation detail.
+- When presenting predictions or buy candidates, include a short user-facing note that the output is for enjoyment and reference only, not a profit guarantee.
+- Explain that recovery rate depends on odds, number of tickets, stake sizing, and last-minute information. Do not imply that buying the suggested tickets as-is will be profitable.
 
 ## Confidence Translation
 
@@ -41,6 +43,7 @@ Use these rough labels when helpful.
   - 面白い相手候補
   - 荒れそうなレース
 - For odds-band requests, classify tickets by practical bands such as `低め`, `中穴`, `穴` unless the user specifies exact thresholds.
+- If the user asks about buying or expected return, explicitly say that probability alone is insufficient and odds/expected value must be considered.
 - Keep tone understandable and a bit lively, but do not become chatty or exaggerated.
 
 ## Read Path

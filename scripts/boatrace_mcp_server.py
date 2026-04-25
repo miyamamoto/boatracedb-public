@@ -21,6 +21,10 @@ from scripts.boatrace_analysis_query import (  # noqa: E402
     execute_query,
 )
 from src.pipeline.duckdb_prediction_repository import DuckDBPredictionRepository  # noqa: E402
+from src.pipeline.prediction_disclaimer import (  # noqa: E402
+    attach_prediction_disclaimer,
+    prediction_disclaimer_payload,
+)
 from src.pipeline.prediction_auto_prepare import ensure_predictions_for_date  # noqa: E402
 
 
@@ -41,6 +45,10 @@ def _db_path() -> Path:
 
 def _jsonable(value: Any) -> Any:
     return json.loads(json.dumps(value, ensure_ascii=False, default=str))
+
+
+def _prediction_payload(value: Any) -> Any:
+    return _jsonable(attach_prediction_disclaimer(value))
 
 
 def _error(message: str, *, hint: str | None = None) -> Dict[str, Any]:
@@ -102,7 +110,11 @@ def build_server():
             repository = _repository()
             latest = repository.get_latest_prediction_run()
             payload = repository.get_prediction_run_details(latest["id"]) if latest else None
-            return {"success": True, "prediction_run": _jsonable(payload)}
+            return {
+                "success": True,
+                "prediction_run": _prediction_payload(payload),
+                "disclaimer": prediction_disclaimer_payload(),
+            }
         except (duckdb.Error, OSError, FileNotFoundError) as exc:
             return _error(str(exc), hint="予測が無い場合は boatrace-bootstrap または predict を実行してください。")
 
@@ -116,14 +128,16 @@ def build_server():
                     "success": True,
                     "target_date": target_date,
                     "prepared": bool(ensure_result.get("prepared")),
-                    "prediction_run": _jsonable(ensure_result.get("prediction_run")),
+                    "prediction_run": _prediction_payload(ensure_result.get("prediction_run")),
+                    "disclaimer": prediction_disclaimer_payload(),
                 }
             payload = _repository().get_predictions_for_date(_parse_date(target_date))
             return {
                 "success": payload is not None,
                 "target_date": target_date,
                 "prepared": False,
-                "prediction_run": _jsonable(payload),
+                "prediction_run": _prediction_payload(payload),
+                "disclaimer": prediction_disclaimer_payload(),
                 "error": None if payload else ensure_result.get("error"),
             }
         except ValueError:
@@ -148,7 +162,8 @@ def build_server():
                 "venue_code": normalized_venue,
                 "race_number": int(race_number),
                 "prepared": bool(ensure_result.get("prepared")),
-                "race_prediction": _jsonable(payload),
+                "race_prediction": _prediction_payload(payload),
+                "disclaimer": prediction_disclaimer_payload(),
                 "error": None if payload else ensure_result.get("error"),
             }
         except ValueError:
@@ -172,6 +187,9 @@ def build_server():
         """Controlled fetch+predict for today/tomorrow only. Does not run arbitrary SQL or retrain."""
         try:
             ensure_result = _ensure_prediction_run(target_date, force=bool(force))
+            if ensure_result.get("prediction_run"):
+                attach_prediction_disclaimer(ensure_result["prediction_run"])
+            ensure_result["disclaimer"] = prediction_disclaimer_payload()
             return _jsonable(ensure_result)
         except ValueError:
             return _error("target_date は YYYY-MM-DD で指定してください。")

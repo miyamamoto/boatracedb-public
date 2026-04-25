@@ -15,6 +15,7 @@ from .duckdb_prediction_repository import (
     DuckDBPredictionRepository,
     VENUE_CODE_TO_NAME,
 )
+from .prediction_disclaimer import render_prediction_disclaimer_markdown
 
 if TYPE_CHECKING:
     from src.crawler.comprehensive_parser import ComprehensiveBoatRaceParser
@@ -770,4 +771,5 @@ class LocalPredictionPipeline:
                         f" ({float(top_combination['probability']):.1%})"
                     )
 
+        lines.extend(["", render_prediction_disclaimer_markdown().rstrip()])
         return "\n".join(lines) + "\n"

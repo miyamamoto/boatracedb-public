@@ -12,6 +12,10 @@ from typing import Any, Dict, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.pipeline.duckdb_prediction_repository import DuckDBPredictionRepository
+from src.pipeline.prediction_disclaimer import (
+    attach_prediction_disclaimer,
+    render_prediction_disclaimer_markdown,
+)
 from src.pipeline.prediction_auto_prepare import ensure_predictions_for_date
 
 
@@ -123,6 +127,7 @@ def render_markdown_run(payload: Optional[Dict[str, Any]]) -> str:
             f" | confidence={float(race.get('confidence_score', 0.0)):.3f}"
             f" | {top3_text}"
         )
+    lines.extend(["", render_prediction_disclaimer_markdown().rstrip()])
     return "\n".join(lines) + "\n"
 
 
@@ -153,6 +158,7 @@ def render_markdown_race(payload: Optional[Dict[str, Any]]) -> str:
                     f"  {combination['combination']} ({float(combination['probability']):.1%})"
                 )
 
+    lines.extend(["", render_prediction_disclaimer_markdown().rstrip()])
     return "\n".join(lines) + "\n"
 
 
@@ -177,6 +183,8 @@ def render_markdown_model(payload: Optional[Dict[str, Any]]) -> str:
 
 
 def render_output(command: str, payload: Any, output_format: str) -> str:
+    if command in {"latest", "date", "race"}:
+        payload = attach_prediction_disclaimer(payload)
     if output_format == "json":
         return json.dumps(payload, ensure_ascii=False, indent=2, default=str)
     if command == "status":
