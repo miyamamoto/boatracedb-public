@@ -400,3 +400,37 @@ def test_motor_history_is_scoped_by_venue() -> None:
     assert frame.loc[2, "venue_code"] == "07"
     assert frame.loc[2, "motor_count"] == 1
     assert frame.loc[2, "motor_win_rate"] == 1.0
+
+
+def test_race_relative_features_use_same_race_prerace_values() -> None:
+    entries_df = []
+    for boat_number, win_rate in enumerate([7.0, 6.0, 5.0, 4.0, 3.0, 2.0], start=1):
+        entries_df.append(
+            {
+                "race_date": date(2026, 4, 1),
+                "venue_code": "07",
+                "race_number": 1,
+                "boat_number": boat_number,
+                "racer_number": 4000 + boat_number,
+                "motor_number": 10 + boat_number,
+                "national_win_rate": win_rate,
+                "result_position": boat_number,
+            }
+        )
+    races_df = [{"race_date": date(2026, 4, 1), "venue_code": "07", "race_number": 1}]
+
+    frame = build_modeling_frame(
+        entries_df=pd.DataFrame(entries_df),
+        races_df=pd.DataFrame(races_df),
+        feature_columns=[
+            "national_win_rate",
+            "national_win_rate_race_diff",
+            "national_win_rate_race_gap_to_best",
+        ],
+    ).sort_values("boat_number")
+
+    mean_win_rate = sum([7.0, 6.0, 5.0, 4.0, 3.0, 2.0]) / 6
+    assert frame.iloc[0]["national_win_rate_race_diff"] == pytest.approx(7.0 - mean_win_rate)
+    assert frame.iloc[0]["national_win_rate_race_gap_to_best"] == pytest.approx(0.0)
+    assert frame.iloc[-1]["national_win_rate_race_diff"] == pytest.approx(2.0 - mean_win_rate)
+    assert frame.iloc[-1]["national_win_rate_race_gap_to_best"] == pytest.approx(5.0)

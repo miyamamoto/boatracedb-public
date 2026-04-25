@@ -73,6 +73,22 @@ FEATURE_GROUPS: Dict[str, List[str]] = {
         "lane_top3_rate",
         "lane_avg_finish",
     ],
+    "race_relative": [
+        "lane_win_rate_race_diff",
+        "lane_win_rate_race_rank",
+        "lane_win_rate_race_gap_to_best",
+        "lane_top3_rate_race_diff",
+        "lane_top3_rate_race_gap_to_best",
+        "national_quinella_rate_race_diff",
+        "national_quinella_rate_race_gap_to_best",
+        "motor_quinella_rate_race_diff",
+        "motor_quinella_rate_race_gap_to_best",
+        "motor_top3_rate_race_diff",
+        "racer_top3_rate_race_diff",
+        "national_win_rate_race_diff",
+        "national_win_rate_race_gap_to_best",
+        "local_quinella_rate_race_diff",
+    ],
 }
 TRAINING_FEATURE_EXCLUSIONS = {
     "distance",
@@ -91,6 +107,7 @@ FEATURE_COLUMNS = [
         "racer_history",
         "motor_history",
         "lane_history",
+        "race_relative",
     )
     for feature in FEATURE_GROUPS[group_name]
     if group_name not in TRAINING_GROUP_EXCLUSIONS
@@ -107,8 +124,25 @@ FEATURE_STAGE_LABELS = {
     "racer_venue_history": "選手の会場別履歴を集計",
     "motor_history": "モーター履歴を集計",
     "lane_history": "艇番履歴を集計",
+    "race_relative": "レース内相対値を計算",
     "finalize": "特徴量を正規化",
     "complete": "特徴量フレームを確定",
+}
+RACE_RELATIVE_FEATURE_SPECS: Dict[str, Dict[str, str]] = {
+    "lane_win_rate_race_diff": {"source": "lane_win_rate", "kind": "diff"},
+    "lane_win_rate_race_rank": {"source": "lane_win_rate", "kind": "rank"},
+    "lane_win_rate_race_gap_to_best": {"source": "lane_win_rate", "kind": "gap"},
+    "lane_top3_rate_race_diff": {"source": "lane_top3_rate", "kind": "diff"},
+    "lane_top3_rate_race_gap_to_best": {"source": "lane_top3_rate", "kind": "gap"},
+    "national_quinella_rate_race_diff": {"source": "national_quinella_rate", "kind": "diff"},
+    "national_quinella_rate_race_gap_to_best": {"source": "national_quinella_rate", "kind": "gap"},
+    "motor_quinella_rate_race_diff": {"source": "motor_quinella_rate", "kind": "diff"},
+    "motor_quinella_rate_race_gap_to_best": {"source": "motor_quinella_rate", "kind": "gap"},
+    "motor_top3_rate_race_diff": {"source": "motor_top3_rate", "kind": "diff"},
+    "racer_top3_rate_race_diff": {"source": "racer_top3_rate", "kind": "diff"},
+    "national_win_rate_race_diff": {"source": "national_win_rate", "kind": "diff"},
+    "national_win_rate_race_gap_to_best": {"source": "national_win_rate", "kind": "gap"},
+    "local_quinella_rate_race_diff": {"source": "local_quinella_rate", "kind": "diff"},
 }
 ZERO_IMPORTANCE_SPLIT_THRESHOLD = 0
 NEAR_ZERO_SPLIT_THRESHOLD = 100
@@ -201,6 +235,44 @@ def _compute_history_metrics(
     )
 
 
+def _compute_race_relative_features(
+    frame: pd.DataFrame,
+    selected_feature_columns: List[str],
+) -> pd.DataFrame:
+    """Add pre-race features that compare each boat against same-race rivals."""
+
+    race_keys = ["race_date", "venue_code", "race_number"]
+    grouped_keys = [frame[key] for key in race_keys]
+    computed_sources: Dict[str, Dict[str, pd.Series]] = {}
+
+    for feature_name in selected_feature_columns:
+        spec = RACE_RELATIVE_FEATURE_SPECS.get(feature_name)
+        if not spec:
+            continue
+
+        source_column = spec["source"]
+        if source_column not in frame.columns:
+            frame[feature_name] = 0.0
+            continue
+
+        if source_column not in computed_sources:
+            values = pd.to_numeric(frame[source_column], errors="coerce").fillna(0.0)
+            grouped = values.groupby(grouped_keys)
+            computed_sources[source_column] = {
+                "diff": values - grouped.transform("mean"),
+                "gap": grouped.transform("max") - values,
+                "rank": grouped.rank(method="average", ascending=False),
+            }
+
+        frame[feature_name] = (
+            pd.to_numeric(computed_sources[source_column][spec["kind"]], errors="coerce")
+            .fillna(0.0)
+            .astype(float)
+        )
+
+    return frame
+
+
 def _resolve_feature_columns(feature_columns: Optional[List[str]]) -> List[str]:
     if feature_columns is None:
         return list(FEATURE_COLUMNS)
@@ -222,6 +294,7 @@ def _selected_feature_groups(feature_columns: List[str]) -> List[str]:
             "racer_venue_history",
             "motor_history",
             "lane_history",
+            "race_relative",
         )
         if group_name in groups
     ]
@@ -377,6 +450,10 @@ def build_modeling_frame(
         stage_started_at = announce("lane_history")
         frame = _compute_history_metrics(frame, ["boat_number"], "lane")
         finish_stage("lane_history", stage_started_at)
+    if "race_relative" in selected_groups:
+        stage_started_at = announce("race_relative")
+        frame = _compute_race_relative_features(frame, selected_feature_columns)
+        finish_stage("race_relative", stage_started_at)
 
     stage_started_at = announce("finalize")
     for column in selected_feature_columns:
