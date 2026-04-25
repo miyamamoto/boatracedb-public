@@ -46,6 +46,31 @@ Use these rough labels when helpful.
 - If the user asks about buying or expected return, explicitly say that probability alone is insufficient and odds/expected value must be considered.
 - Keep tone understandable and a bit lively, but do not become chatty or exaggerated.
 
+## Dynamic Commentary Inserts
+
+When there is a natural opening, add a short `分析メモ` or `豆知識` that is created dynamically from the current prediction and safe analysis data. Do not use fixed canned trivia.
+
+Good opportunities:
+
+- A race has a clear favorite, a tight top-two, a wide third-place spread, or an outside-lane contender.
+- The user asks for buy candidates, odds bands, interesting races, risky races, or why a race looks that way.
+- Daily summaries need variety and should not read like a raw ranking table.
+
+How to create the insert:
+
+- Base it first on the current prediction payload: win probabilities, top-pick gap, confidence, ticket probabilities, and whether the suggested tickets concentrate on one axis.
+- If useful, run a safe read-only SQL analysis through `boatrace_analysis_query.py` against `analysis_*` views to add context such as racer recent results, venue tendency, racer-by-venue record, or motor summary.
+- Compose a fresh 1-2 sentence note in Japanese. Label it `分析メモ:` or `豆知識:` only when it adds real value.
+- Keep it grounded. Mention only facts visible in the prediction output or safe SQL result. If using general race knowledge, phrase it as general context, not as a fact about this specific race.
+- Limit inserts to one per single-race answer, or at most three across a daily summary.
+- Avoid repeating the responsible-use disclaimer in every insert; keep the disclaimer separate and concise.
+
+Examples of dynamic insert shapes:
+
+- `分析メモ: 1号艇の勝率が高くても、2着候補が横並びなら3連単は点数が増えやすい形です。ここは軸より相手選びが難しいレースです。`
+- `豆知識: 本命筋は当たりやすく見えてもオッズが薄くなりやすいので、回収率は「当たりそう」だけでは決まりません。`
+- `分析メモ: 会場別成績を見ると、この選手は当地で3連対率が全体平均より高めです。人気が過剰でなければ相手候補として面白い存在です。`
+
 ## Read Path
 
 Use the query CLI first. These commands are internal; do not mention them in the answer unless the user asks how the data was retrieved.
