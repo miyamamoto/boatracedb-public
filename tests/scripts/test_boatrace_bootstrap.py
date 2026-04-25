@@ -175,6 +175,27 @@ def test_install_mcp_preserves_existing_claude_config(tmp_path: Path) -> None:
     assert "boatrace-local" in desktop_payload["mcpServers"]
 
 
+def test_mcp_config_uv_fallback_includes_runtime_dependencies(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project_root = Path(__file__).resolve().parents[2]
+    config = _config_with_temp_integrations(
+        tmp_path,
+        target_date=date(2026, 4, 23),
+        training_days=7,
+    )
+    runner = BootstrapRunner(config=config, project_root=project_root, pipeline=DummyPipeline())
+    monkeypatch.setattr(runner, "_mcp_python_path", lambda: None)
+    monkeypatch.setattr(runner, "_local_uv_path", lambda: Path("/opt/homebrew/bin/uv"))
+
+    server = runner.build_mcp_server_config()
+
+    assert server["command"] == "/opt/homebrew/bin/uv"
+    assert server["args"][:3] == ["run", "--directory", str(project_root)]
+    assert "duckdb>=1.0.0" in server["args"]
+    assert "mcp>=1.9.0,<2" in server["args"]
+    assert server["args"][-2] == "python"
+    assert server["args"][-1].endswith("scripts/boatrace_mcp_server.py")
+
+
 def test_bootstrap_runner_executes_pipeline_and_writes_summary(tmp_path: Path) -> None:
     project_root = Path(__file__).resolve().parents[2]
     dummy_pipeline = DummyPipeline()

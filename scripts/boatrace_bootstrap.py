@@ -46,6 +46,7 @@ DEFAULT_DB_PATH = "data/boatrace_pipeline.duckdb"
 DEFAULT_CACHE_DIR = "data/comprehensive_cache"
 DEFAULT_ANALYSIS_DAYS = 180
 MCP_SERVER_NAME = "boatrace-local"
+MCP_UV_RUNTIME_PACKAGES = ("duckdb>=1.0.0", "mcp>=1.9.0,<2")
 
 
 def _default_claude_desktop_config_path() -> Path:
@@ -410,9 +411,15 @@ class BootstrapRunner:
                     "run",
                     "--directory",
                     str(self.project_root),
-                    "python",
-                    str(self.project_root / "scripts" / "boatrace_mcp_server.py"),
                 ]
+                for package in MCP_UV_RUNTIME_PACKAGES:
+                    args.extend(["--with", package])
+                args.extend(
+                    [
+                        "python",
+                        str(self.project_root / "scripts" / "boatrace_mcp_server.py"),
+                    ]
+                )
             else:
                 command = sys.executable
                 args = [str(self.project_root / "scripts" / "boatrace_mcp_server.py")]
