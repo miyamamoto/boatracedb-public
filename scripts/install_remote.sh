@@ -60,7 +60,7 @@ BoatRace Local Predictor remote installer
 
 このコマンドはアプリ一式をダウンロードして展開し、ローカル bootstrap を起動します。
 git や Python を事前に入れておく必要はありません。
-bootstrap ではデータ取得、特徴量作成、モデル学習、予測、skill 導入まで実行します。
+bootstrap ではデータ取得、特徴量作成、モデル学習、予測、skill/MCP 導入まで実行します。
 初回は特徴量作成と学習に時間がかかるため、進捗表示を見ながら待ってください。
 
 EOF

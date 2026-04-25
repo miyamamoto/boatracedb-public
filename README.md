@@ -5,7 +5,7 @@
 目的は次の 2 点です。
 
 - リモートからデータを取得し、DuckDB とローカルモデルで予測する
-- 予測結果を `boatrace-predictions` / `boatrace-program-sheet` skill から使う
+- 予測結果を `boatrace-predictions` / `boatrace-program-sheet` skill と `boatrace-local` MCP から使う
 
 ## 1 コマンド導入
 
@@ -29,9 +29,18 @@ cd $HOME\boatracedb
 powershell -ExecutionPolicy Bypass -File .\scripts\install_boatrace_local.ps1
 ```
 
-初回導入では、アプリ一式の展開、アプリ専用 Python 環境作成、依存関係導入、データ取得、特徴量作成、モデル学習、予測、skill/agent 配置まで実行します。既定の学習期間は直近 90 日、再学習間隔は 7 日です。
+初回導入では、アプリ一式の展開、アプリ専用 Python 環境作成、依存関係導入、データ取得、特徴量作成、モデル学習、予測、skill/agent 配置、Claude MCP 登録まで実行します。既定の学習期間は直近 90 日、再学習間隔は 7 日です。
 
-インストール中はスピナー、全体進捗、ステージ別進捗、経過時間、残り時間の目安を表示します。初回は Python runtime 取得、DuckDB / LightGBM などの依存導入、データ取得、特徴量作成、LightGBM 学習に時間がかかります。特に特徴量作成では、選手・モーター・会場などの過去成績を時系列で集計するため、端末性能やネットワーク状況によって数分から十数分程度かかることがあります。
+インストール中はスピナー、全体進捗、現在の処理、経過時間、残り時間の目安を表示します。初回は Python runtime 取得、DuckDB / LightGBM などの依存導入、データ取得、特徴量作成、LightGBM 学習に時間がかかります。
+
+所要時間の目安:
+
+- 180日: 標準。データ取得だけで約1時間、初回セットアップ全体で約1.5から2.5時間
+- 365日: 年間分析向け。初回セットアップ全体で約3から5時間
+- 730日: 中長期分析向け。初回セットアップ全体で約6から10時間
+- 1095日: 長期研究向け。初回セットアップ全体で約9から15時間
+
+特に特徴量作成では、選手・モーター・会場などの過去成績を時系列で集計するため、端末性能やネットワーク状況によって大きく変わります。
 
 セットアップ時は、学習期間とは別に SQL 分析用へ投入する過去実績日数も指定できます。未指定の場合は既定で 180 日分を取得します。対話実行では installer が確認します。
 
@@ -87,6 +96,27 @@ boatrace-program-sheet --target-date 2026-04-24 --venue-code 22
 - Claude Code: `~/.claude/skills/boatrace-program-sheet`
 - Claude: `~/.claude/agents/boatrace-predictions.md`
 - Claude: `~/.claude/agents/boatrace-program-sheet.md`
+
+Claude Code / Claude Desktop には `boatrace-local` MCP server も自動登録されます。これはローカル DuckDB を読み取り専用で参照する server です。自由分析 SQL は `analysis_*` ビューだけを許可し、DDL/DML、ファイル読込、複数ステートメントは拒否します。
+
+MCP から使える主な道具:
+
+- `boatrace_status`: DB、モデル、予測の状態確認
+- `boatrace_latest_predictions`: 最新予測一覧
+- `boatrace_race_prediction`: 指定レースの予測
+- `boatrace_analysis_schema`: SQL 分析用ビューの確認
+- `boatrace_safe_analysis_query`: 読み取り専用 SQL 分析
+
+## アンインストール
+
+```bash
+rm -rf ~/boatracedb
+rm -rf ~/.codex/skills/boatrace-predictions ~/.codex/skills/boatrace-program-sheet
+rm -rf ~/.claude/skills/boatrace-predictions ~/.claude/skills/boatrace-program-sheet
+rm -f ~/.claude/agents/boatrace-predictions.md ~/.claude/agents/boatrace-program-sheet.md
+```
+
+データ、モデル、予測結果も `~/boatracedb` 配下に入るため、上の削除でローカル環境は消えます。Claude MCP の登録は `~/.claude.json` と Claude Desktop config から `boatrace-local` を削除してください。
 
 反映には Codex / Claude の再起動が必要です。通常の質問では backend の詳細を出さず、予測の見立て、買い目候補、番組表の要点を自然な説明として返す設計です。
 

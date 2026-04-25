@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import sys
 from dataclasses import asdict, dataclass, field
@@ -44,6 +45,16 @@ except ImportError:  # pragma: no cover
 DEFAULT_DB_PATH = "data/boatrace_pipeline.duckdb"
 DEFAULT_CACHE_DIR = "data/comprehensive_cache"
 DEFAULT_ANALYSIS_DAYS = 180
+MCP_SERVER_NAME = "boatrace-local"
+
+
+def _default_claude_desktop_config_path() -> Path:
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
+    if os.name == "nt":
+        appdata = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
+        return appdata / "Claude" / "claude_desktop_config.json"
+    return Path.home() / ".config" / "Claude" / "claude_desktop_config.json"
 
 
 @dataclass
@@ -58,8 +69,11 @@ class BootstrapConfig:
     install_codex_skills: bool = True
     install_claude_skills: bool = True
     install_claude_agents: bool = True
+    install_claude_mcp: bool = True
     codex_home: Path = field(default_factory=lambda: Path.home() / ".codex")
     claude_home: Path = field(default_factory=lambda: Path.home() / ".claude")
+    claude_code_config_path: Path = field(default_factory=lambda: Path.home() / ".claude.json")
+    claude_desktop_config_path: Path = field(default_factory=_default_claude_desktop_config_path)
     skip_fetch: bool = False
     skip_train: bool = False
     skip_predict: bool = False
@@ -93,6 +107,8 @@ class BootstrapConfig:
         payload["retrain_interval_days"] = self.retrain_interval_days
         payload["codex_home"] = str(self.codex_home)
         payload["claude_home"] = str(self.claude_home)
+        payload["claude_code_config_path"] = str(self.claude_code_config_path)
+        payload["claude_desktop_config_path"] = str(self.claude_desktop_config_path)
         return payload
 
 
@@ -123,6 +139,28 @@ def _copy_file(source: Path, destination: Path) -> Dict[str, Any]:
         "source": str(source),
         "destination": str(destination),
     }
+
+
+def _read_json_object(path: Path) -> Dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"JSON 設定ファイルを読めません: {path}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"JSON 設定ファイルの root は object である必要があります: {path}")
+    return payload
+
+
+def _write_json_object(path: Path, payload: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f"{path.name}.tmp")
+    tmp_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, default=str) + "\n",
+        encoding="utf-8",
+    )
+    tmp_path.replace(path)
 
 
 class BootstrapRunner:
@@ -336,6 +374,84 @@ class BootstrapRunner:
             messages.append("現在のモデルの鮮度が判定できないため再学習します。")
         return " ".join(messages)
 
+    def _absolute_db_path(self) -> Path:
+        db_path = Path(self.config.db_path)
+        if db_path.is_absolute():
+            return db_path
+        return (self.project_root / db_path).resolve()
+
+    def _local_uv_path(self) -> Optional[Path]:
+        local_uv = self.project_root / ".tools" / "bin" / ("uv.exe" if os.name == "nt" else "uv")
+        if local_uv.exists():
+            return local_uv
+        resolved = shutil.which("uv")
+        return Path(resolved) if resolved else None
+
+    def _mcp_python_path(self) -> Optional[Path]:
+        candidates = [
+            self.project_root / ".venv" / "bin" / "python",
+            self.project_root / ".venv" / "Scripts" / "python.exe",
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        return None
+
+    def build_mcp_server_config(self) -> Dict[str, Any]:
+        python_path = self._mcp_python_path()
+        if python_path is not None:
+            command = str(python_path)
+            args = [str(self.project_root / "scripts" / "boatrace_mcp_server.py")]
+        else:
+            uv_path = self._local_uv_path()
+            if uv_path is not None:
+                command = str(uv_path)
+                args = [
+                    "run",
+                    "--directory",
+                    str(self.project_root),
+                    "python",
+                    str(self.project_root / "scripts" / "boatrace_mcp_server.py"),
+                ]
+            else:
+                command = sys.executable
+                args = [str(self.project_root / "scripts" / "boatrace_mcp_server.py")]
+
+        return {
+            "type": "stdio",
+            "command": command,
+            "args": args,
+            "env": {
+                "BOATRACE_PROJECT_ROOT": str(self.project_root),
+                "BOATRACE_DB_PATH": str(self._absolute_db_path()),
+            },
+        }
+
+    def install_claude_code_mcp_config(self) -> Dict[str, Any]:
+        config_path = self.config.claude_code_config_path
+        payload = _read_json_object(config_path)
+        project_key = str(self.project_root)
+        project_config = payload.setdefault("projects", {}).setdefault(project_key, {})
+        project_config.setdefault("mcpServers", {})[MCP_SERVER_NAME] = self.build_mcp_server_config()
+        _write_json_object(config_path, payload)
+        return {
+            "type": "claude_code_mcp",
+            "destination": str(config_path),
+            "server_name": MCP_SERVER_NAME,
+            "project": project_key,
+        }
+
+    def install_claude_desktop_mcp_config(self) -> Dict[str, Any]:
+        config_path = self.config.claude_desktop_config_path
+        payload = _read_json_object(config_path)
+        payload.setdefault("mcpServers", {})[MCP_SERVER_NAME] = self.build_mcp_server_config()
+        _write_json_object(config_path, payload)
+        return {
+            "type": "claude_desktop_mcp",
+            "destination": str(config_path),
+            "server_name": MCP_SERVER_NAME,
+        }
+
     def install_skills(
         self,
         progress_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
@@ -362,13 +478,19 @@ class BootstrapRunner:
                 destination = self.config.claude_home / "agents" / agent_name
                 operations.append(("claude_agent", source, destination))
 
-        total = len(operations)
+        mcp_operations: List[str] = []
+        if self.config.install_claude_mcp:
+            mcp_operations.extend(["claude_code_mcp", "claude_desktop_mcp"])
+
+        total = len(operations) + len(mcp_operations)
         progress_callback("skills:start", {"total": total})
-        for index, (item_type, source, destination) in enumerate(operations, start=1):
+        current = 0
+        for item_type, source, destination in operations:
+            current += 1
             progress_callback(
                 "skills:item_started",
                 {
-                    "current": index,
+                    "current": current,
                     "total": total,
                     "item_type": item_type,
                     "source": str(source),
@@ -381,7 +503,47 @@ class BootstrapRunner:
             progress_callback(
                 "skills:item_completed",
                 {
-                    "current": index,
+                    "current": current,
+                    "total": total,
+                    "item_type": item_type,
+                    "destination": str(destination),
+                },
+            )
+
+        for item_type in mcp_operations:
+            current += 1
+            destination = (
+                self.config.claude_code_config_path
+                if item_type == "claude_code_mcp"
+                else self.config.claude_desktop_config_path
+            )
+            progress_callback(
+                "skills:item_started",
+                {
+                    "current": current,
+                    "total": total,
+                    "item_type": item_type,
+                    "destination": str(destination),
+                },
+            )
+            try:
+                installed_item = (
+                    self.install_claude_code_mcp_config()
+                    if item_type == "claude_code_mcp"
+                    else self.install_claude_desktop_mcp_config()
+                )
+            except (OSError, ValueError) as exc:
+                installed_item = {
+                    "type": item_type,
+                    "destination": str(destination),
+                    "success": False,
+                    "error": str(exc),
+                }
+            installed.append(installed_item)
+            progress_callback(
+                "skills:item_completed",
+                {
+                    "current": current,
                     "total": total,
                     "item_type": item_type,
                     "destination": str(destination),
@@ -393,7 +555,8 @@ class BootstrapRunner:
             "installed": installed,
             "restart_notes": [
                 "Restart Codex to pick up new skills.",
-                "Restart Claude Code to pick up new skills and updated local agents.",
+                "Restart Claude Code to pick up new skills, local agents, and the boatrace-local MCP server.",
+                "Restart Claude Desktop or reconnect MCP servers to pick up boatrace-local.",
             ],
         }
 
@@ -418,9 +581,12 @@ class BootstrapRunner:
         lines = [
             "# BoatRace Bootstrap Summary",
             "",
+            "BoatRace Local Predictor のセットアップは完了しました。",
+            "",
             f"- Target Date: {self.config.target_date.isoformat()}",
             f"- Fetch Window: {self.config.fetch_start_date.isoformat()} -> {self.config.fetch_end_date.isoformat()}",
             f"- Training Window: {self.config.training_start_date.isoformat()} -> {self.config.training_end_date.isoformat()}",
+            f"- Analysis History: {self.config.analysis_days} days",
             "",
         ]
 
@@ -481,7 +647,7 @@ class BootstrapRunner:
 
         skill_summary = summary.get("skills") or {}
         if skill_summary and not skill_summary.get("skipped"):
-            lines.extend(["## Skills", ""])
+            lines.extend(["## Skills / MCP", ""])
             for item in skill_summary.get("installed", []):
                 lines.append(f"- {item['type']}: {item['destination']}")
             lines.append("")
@@ -493,6 +659,24 @@ class BootstrapRunner:
                 f"- DB Path: {(summary.get('status') or {}).get('db_path')}",
                 f"- Models: {(summary.get('status') or {}).get('models')}",
                 f"- Prediction Runs: {(summary.get('status') or {}).get('prediction_runs')}",
+                "",
+                "## Next Steps",
+                "",
+                "- Codex / Claude Code から新しい skill / MCP を認識させるには、必要に応じてアプリを再起動してください。",
+                "- Claude Code / Claude Desktop では `boatrace-local` MCP server が自動登録されます。",
+                "- 最新予測は `boatrace-prediction-query --format markdown latest` で確認できます。",
+                "",
+                "## Uninstall",
+                "",
+                "```bash",
+                "rm -rf ~/boatracedb",
+                "rm -rf ~/.codex/skills/boatrace-predictions ~/.codex/skills/boatrace-program-sheet",
+                "rm -rf ~/.claude/skills/boatrace-predictions ~/.claude/skills/boatrace-program-sheet",
+                "rm -f ~/.claude/agents/boatrace-predictions.md ~/.claude/agents/boatrace-program-sheet.md",
+                "```",
+                "",
+                "`~/.claude.json` と Claude Desktop config に登録された `boatrace-local` MCP server は、",
+                "Claude の MCP 設定画面または JSON から削除してください。",
                 "",
             ]
         )
@@ -547,6 +731,8 @@ class RichBootstrapUI:
                             f"取得期間: {payload['config']['fetch_start_date']} -> {payload['config']['fetch_end_date']}",
                             "",
                             "初回はデータ取得、特徴量作成、LightGBM 学習に時間がかかります。",
+                            "180日分ではデータ取得だけで約1時間、初回全体で1.5から2.5時間程度を見込んでください。",
+                            "365日以上を選んだ場合は、数時間単位で長くなります。",
                             "画面下部には、現在実行中の1ステップだけを表示します。",
                             "特徴量作成では選手・モーター・会場などの過去成績を時系列で集計するため、ここが最も重い工程です。",
                         ]
@@ -609,14 +795,14 @@ class RichBootstrapUI:
                 [
                     "リモートまたは cache から番組表、出走表、結果、オッズを取り込みます。",
                     "初回や未取得日が多い場合はネットワーク待ちが発生します。",
-                    "目安: 数十秒から数分。SQL分析用の履歴日数を増やすほど長くなります。",
+                    "目安: 180日分ではデータ取得だけで約1時間。履歴日数を増やすほど長くなります。",
                 ]
             ),
             "features": "\n".join(
                 [
                     "取得済みデータから、選手・モーター・艇番などの履歴特徴量を作成します。",
                     "過去成績を時系列で集計するため、CPU とディスクを使います。",
-                    "目安: SQL分析用の履歴日数と学習窓が長いほど時間がかかります。",
+                    "目安: 180日分の初回全体では、データ取得後も特徴量作成と学習に追加で数十分以上かかることがあります。",
                 ]
             ),
             "train": "\n".join(
@@ -635,7 +821,9 @@ class RichBootstrapUI:
             "skills": "\n".join(
                 [
                     "Codex、Claude Code、Claude agent から予測結果を読みやすく使えるように配置します。",
-                    "反映には Codex / Claude Code の再起動が必要です。",
+                    "Claude Code / Claude Desktop には boatrace-local MCP server も登録します。",
+                    "MCP は読み取り専用で、SQL 分析も analysis_* ビューだけに制限されます。",
+                    "反映には Codex / Claude Code / Claude Desktop の再起動が必要です。",
                 ]
             ),
         }[stage]
@@ -759,6 +947,25 @@ class RichBootstrapUI:
         table.add_row("予測出力", str((predict_summary.get("output_paths") or {}).get("markdown", "-")))
         table.add_row("summary", str(summary_paths.get("markdown", "-")))
         self.console.print(table)
+        self.console.print(
+            Panel.fit(
+                "\n".join(
+                    [
+                        "BoatRace Local Predictor のセットアップは完了しました。",
+                        "Codex / Claude Code から新しい skill / MCP を認識させるには、必要に応じてアプリを再起動してください。",
+                        "Claude Code / Claude Desktop には boatrace-local MCP server を登録しました。",
+                        "",
+                        "アンインストールする場合:",
+                        "  rm -rf ~/boatracedb",
+                        "  rm -rf ~/.codex/skills/boatrace-predictions ~/.codex/skills/boatrace-program-sheet",
+                        "  rm -rf ~/.claude/skills/boatrace-predictions ~/.claude/skills/boatrace-program-sheet",
+                        "  rm -f ~/.claude/agents/boatrace-predictions.md ~/.claude/agents/boatrace-program-sheet.md",
+                        "  さらに ~/.claude.json / Claude Desktop config から boatrace-local MCP を削除してください。",
+                    ]
+                ),
+                title="セットアップ完了",
+            )
+        )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -780,8 +987,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--install-codex-skills", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--install-claude-skills", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--install-claude-agents", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--install-claude-mcp", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--codex-home", type=Path, default=Path.home() / ".codex")
     parser.add_argument("--claude-home", type=Path, default=Path.home() / ".claude")
+    parser.add_argument("--claude-code-config-path", type=Path, default=Path.home() / ".claude.json")
+    parser.add_argument("--claude-desktop-config-path", type=Path, default=_default_claude_desktop_config_path())
     parser.add_argument("--skip-fetch", action="store_true")
     parser.add_argument("--skip-train", action="store_true")
     parser.add_argument("--skip-predict", action="store_true")
@@ -811,8 +1021,11 @@ def build_config(args: argparse.Namespace) -> BootstrapConfig:
         install_codex_skills=args.install_codex_skills,
         install_claude_skills=args.install_claude_skills,
         install_claude_agents=args.install_claude_agents,
+        install_claude_mcp=args.install_claude_mcp,
         codex_home=args.codex_home,
         claude_home=args.claude_home,
+        claude_code_config_path=args.claude_code_config_path,
+        claude_desktop_config_path=args.claude_desktop_config_path,
         skip_fetch=args.skip_fetch,
         skip_train=args.skip_train,
         skip_predict=args.skip_predict,

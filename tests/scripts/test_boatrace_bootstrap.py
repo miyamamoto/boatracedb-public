@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date
 from pathlib import Path
 
@@ -86,6 +87,18 @@ class DummyPipeline:
         return self.status_payload
 
 
+def _config_with_temp_integrations(tmp_path: Path, **kwargs) -> BootstrapConfig:
+    defaults = {
+        "codex_home": tmp_path / ".codex",
+        "claude_home": tmp_path / ".claude",
+        "claude_code_config_path": tmp_path / ".claude.json",
+        "claude_desktop_config_path": tmp_path / "Claude" / "claude_desktop_config.json",
+        "summary_dir": str(tmp_path / "summaries"),
+    }
+    defaults.update(kwargs)
+    return BootstrapConfig(**defaults)
+
+
 def test_bootstrap_config_derives_expected_windows() -> None:
     config = BootstrapConfig(target_date=date(2026, 4, 23), training_days=90, analysis_days=180)
 
@@ -105,12 +118,10 @@ def test_build_config_rejects_analysis_days_below_minimum() -> None:
 
 def test_install_skills_copies_codex_and_claude_assets(tmp_path: Path) -> None:
     project_root = Path(__file__).resolve().parents[2]
-    config = BootstrapConfig(
+    config = _config_with_temp_integrations(
+        tmp_path,
         target_date=date(2026, 4, 23),
         training_days=7,
-        codex_home=tmp_path / ".codex",
-        claude_home=tmp_path / ".claude",
-        summary_dir=str(tmp_path / "summaries"),
     )
     runner = BootstrapRunner(config=config, project_root=project_root, pipeline=DummyPipeline())
 
@@ -123,17 +134,53 @@ def test_install_skills_copies_codex_and_claude_assets(tmp_path: Path) -> None:
     assert (tmp_path / ".claude" / "skills" / "boatrace-program-sheet" / "SKILL.md").exists()
     assert (tmp_path / ".claude" / "agents" / "boatrace-predictions.md").exists()
     assert (tmp_path / ".claude" / "agents" / "boatrace-program-sheet.md").exists()
+    assert any(item["type"] == "claude_code_mcp" for item in result["installed"])
+    assert any(item["type"] == "claude_desktop_mcp" for item in result["installed"])
+    assert "boatrace-local" in (tmp_path / ".claude.json").read_text(encoding="utf-8")
+    assert "boatrace-local" in (tmp_path / "Claude" / "claude_desktop_config.json").read_text(encoding="utf-8")
+
+
+def test_install_mcp_preserves_existing_claude_config(tmp_path: Path) -> None:
+    project_root = Path(__file__).resolve().parents[2]
+    claude_code_config_path = tmp_path / ".claude.json"
+    claude_desktop_config_path = tmp_path / "Claude" / "claude_desktop_config.json"
+    claude_code_config_path.write_text(
+        '{"projects": {"/tmp/other": {"mcpServers": {"existing": {"command": "python"}}}}}',
+        encoding="utf-8",
+    )
+    claude_desktop_config_path.parent.mkdir(parents=True, exist_ok=True)
+    claude_desktop_config_path.write_text(
+        '{"mcpServers": {"jvlink-remote": {"command": "ssh"}}}',
+        encoding="utf-8",
+    )
+    config = _config_with_temp_integrations(
+        tmp_path,
+        target_date=date(2026, 4, 23),
+        training_days=7,
+        claude_code_config_path=claude_code_config_path,
+        claude_desktop_config_path=claude_desktop_config_path,
+    )
+    runner = BootstrapRunner(config=config, project_root=project_root, pipeline=DummyPipeline())
+
+    runner.install_skills()
+
+    code_payload = json.loads(claude_code_config_path.read_text(encoding="utf-8"))
+    desktop_payload = json.loads(claude_desktop_config_path.read_text(encoding="utf-8"))
+    assert "existing" in code_payload["projects"]["/tmp/other"]["mcpServers"]
+    server = code_payload["projects"][str(project_root)]["mcpServers"]["boatrace-local"]
+    assert server["type"] == "stdio"
+    assert server["env"]["BOATRACE_DB_PATH"].endswith("data/boatrace_pipeline.duckdb")
+    assert "jvlink-remote" in desktop_payload["mcpServers"]
+    assert "boatrace-local" in desktop_payload["mcpServers"]
 
 
 def test_bootstrap_runner_executes_pipeline_and_writes_summary(tmp_path: Path) -> None:
     project_root = Path(__file__).resolve().parents[2]
     dummy_pipeline = DummyPipeline()
-    config = BootstrapConfig(
+    config = _config_with_temp_integrations(
+        tmp_path,
         target_date=date(2026, 4, 23),
         training_days=7,
-        codex_home=tmp_path / ".codex",
-        claude_home=tmp_path / ".claude",
-        summary_dir=str(tmp_path / "summaries"),
     )
     runner = BootstrapRunner(config=config, project_root=project_root, pipeline=dummy_pipeline)
     events = []
@@ -163,13 +210,11 @@ def test_bootstrap_runner_skips_train_when_model_is_recent(tmp_path: Path) -> No
             },
         }
     )
-    config = BootstrapConfig(
+    config = _config_with_temp_integrations(
+        tmp_path,
         target_date=date(2026, 4, 24),
         training_days=90,
         retrain_interval_days=7,
-        codex_home=tmp_path / ".codex",
-        claude_home=tmp_path / ".claude",
-        summary_dir=str(tmp_path / "summaries"),
     )
     runner = BootstrapRunner(config=config, project_root=project_root, pipeline=dummy_pipeline)
 
@@ -196,13 +241,11 @@ def test_bootstrap_runner_retrains_when_model_is_stale(tmp_path: Path) -> None:
             },
         }
     )
-    config = BootstrapConfig(
+    config = _config_with_temp_integrations(
+        tmp_path,
         target_date=date(2026, 4, 24),
         training_days=90,
         retrain_interval_days=7,
-        codex_home=tmp_path / ".codex",
-        claude_home=tmp_path / ".claude",
-        summary_dir=str(tmp_path / "summaries"),
     )
     runner = BootstrapRunner(config=config, project_root=project_root, pipeline=dummy_pipeline)
 
