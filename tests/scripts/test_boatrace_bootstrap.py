@@ -193,7 +193,8 @@ def test_mcp_config_uv_fallback_includes_runtime_dependencies(tmp_path: Path, mo
     assert "duckdb>=1.0.0" in server["args"]
     assert "mcp>=1.9.0,<2" in server["args"]
     assert server["args"][-2] == "python"
-    assert server["args"][-1].endswith("scripts/boatrace_mcp_server.py")
+    assert Path(server["args"][-1]).name == "boatrace_mcp_server.py"
+    assert Path(server["args"][-1]).parent.name == "scripts"
 
 
 def test_bootstrap_runner_executes_pipeline_and_writes_summary(tmp_path: Path) -> None:
