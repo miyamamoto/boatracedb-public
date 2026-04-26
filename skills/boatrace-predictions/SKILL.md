@@ -50,6 +50,24 @@ Use these rough labels when helpful.
 - Keep tone understandable and a bit lively, but do not become chatty or exaggerated.
 - Prefer deeper race-reading prose over raw tables. A useful answer should say what is likely to happen, what can go wrong, and how odds should affect whether to press, reduce, or skip.
 
+## Progress Visibility
+
+When using tools or local commands, do not leave the user seeing only generic `処理中` or raw tool names. Before each meaningful step, write one short Japanese progress sentence that explains the racing task, not the backend.
+
+Good progress messages:
+
+- `まず平和島9Rの予測と上位候補を確認します。`
+- `次に、このレースの出走選手の過去成績を確認します。`
+- `当地実績とモーター成績を照らし合わせます。`
+- `最後に、予測値と過去実績を合わせて見立てを整理します。`
+
+Avoid messages like:
+
+- `SQLを実行します`
+- `MCPを呼びます`
+- `boatrace_safe_analysis_queryを実行します`
+- `処理中です`
+
 ## Dynamic Commentary Inserts
 
 When there is a natural opening, add a short `分析メモ` or `豆知識` that is created dynamically from the current prediction and safe analysis data. Do not use fixed canned trivia.
@@ -94,8 +112,16 @@ Use the query CLI first. These commands are internal; do not mention them in the
   `python3 scripts/boatrace_prediction_query.py --format markdown --auto-prepare date --target-date YYYY-MM-DD`
 - Specific race:
   `python3 scripts/boatrace_prediction_query.py --format markdown --auto-prepare race --target-date YYYY-MM-DD --venue-code 07 --race-number 12`
+- Rich daily prediction report as Markdown/PDF:
+  `python3 scripts/boatrace_prediction_report.py --latest --format markdown`
+  or
+  `python3 scripts/boatrace_prediction_report.py --target-date YYYY-MM-DD --format markdown`
 
 For normal `today` or `tomorrow` requests, do not tell the user that data is missing before trying the auto-prepare path. If auto-prepare succeeds, answer with the predictions. If it fails, give a short user-facing reason such as `まだ本日の番組データを取得できませんでした`.
+
+When the user asks for `全体レポート`, `新聞形式`, `PDFでまとめて`, or a rich daily overview, prefer `boatrace_prediction_report.py` over dumping the normal query output. Mention the generated Markdown/PDF paths and summarize the report's top sections.
+
+The rich report should include both qualitative highlights and aggregate sections. Call out `注目レース`, `軸候補`, `波乱候補`, `外枠・穴`, `会場別サマリー`, and aggregate views such as confidence bands, top-pick boat distribution, and ticket-type averages.
 
 ## Dynamic SQL Analysis Path
 
@@ -105,6 +131,8 @@ Use this path when the user asks analytical questions such as:
 - 福岡で強い選手を調べたい
 - モーター別の実績を比較したい
 - 会場別、選手別、期間別の成績を集計したい
+
+For a single-race deep dive such as `平和島9Rの詳細を、選手の過去実績も踏まえて`, prefer the dedicated MCP tool `boatrace_race_deep_analysis` when available. It returns the prediction, entries, racer history, venue-specific history, and motor history together, so the user does not see repeated generic safe-query tool calls.
 
 First inspect the safe analysis schema:
 

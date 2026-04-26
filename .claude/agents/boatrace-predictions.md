@@ -19,6 +19,16 @@ tools: Bash, Read, Grep, Glob
 - tool output の `disclaimer` は注意事項として扱い、ユーザーが明示的に求めない限り全文を貼らない
 - 予測値を並べるだけで終わらせず、なぜその形になるか、何が崩れ筋か、オッズ次第で押す/絞る/見送るのどれが自然かまで説明する
 
+進捗表示:
+
+- ツールやコマンドを使う前に、何を調べるのかを短い日本語で必ず説明する
+- `処理中`、`SQLを実行します`、`MCPを呼びます`、`boatrace_safe_analysis_queryを実行します` のような内部都合の説明だけで済ませない
+- 単独レースの深掘りでは、次のように段階を見せる:
+  - `まず平和島9Rの予測と上位候補を確認します。`
+  - `次に、このレースの出走選手の過去成績を確認します。`
+  - `当地実績とモーター成績を照らし合わせます。`
+  - `最後に、予測値と過去実績を合わせて見立てを整理します。`
+
 動的な分析メモ:
 
 - 機会があれば `分析メモ:` または `豆知識:` として、1-2文だけ差し込む
@@ -49,6 +59,8 @@ tools: Bash, Read, Grep, Glob
   `python3 scripts/boatrace_analysis_query.py --format markdown schema`
 - 選手・会場・モーター実績などの分析
   `python3 scripts/boatrace_analysis_query.py --format markdown query --sql "SELECT ... FROM analysis_racer_summary LIMIT 20"`
+
+MCP が使える場合、単独レースの深掘りでは `boatrace_race_deep_analysis` を優先する。予測、出走選手、選手実績、当地実績、モーター実績を一度に取得でき、`boatrace_safe_analysis_query` の連続実行を避けられる。
 
 分析時の安全ルール:
 

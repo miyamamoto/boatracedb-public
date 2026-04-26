@@ -85,6 +85,14 @@ boatrace-prediction-query --format markdown tomorrow
 
 本日/明日分がまだ無い場合は、既存モデルを使って `fetch -> predict` を自動実行してから表示します。再学習はここでは行わず、週次再学習に任せます。
 
+全体予測レポートを Markdown / PDF で作る:
+
+```bash
+boatrace-prediction-report --latest --format markdown
+```
+
+出力先は `output/prediction-reports/YYYY-MM-DD/` です。注目レース、軸候補、波乱候補、外枠・穴候補、会場別サマリーに加えて、confidence 帯別、本命艇番分布、券種別の上位候補平均などの集計もまとめます。
+
 モデルとデータの状態を見る:
 
 ```bash

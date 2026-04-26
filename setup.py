@@ -48,6 +48,7 @@ setup(
             "boatrace-analysis-query=scripts.boatrace_analysis_query:main",
             "boatrace-mcp-server=scripts.boatrace_mcp_server:main",
             "boatrace-prediction-query=scripts.boatrace_prediction_query:main",
+            "boatrace-prediction-report=scripts.boatrace_prediction_report:main",
             "boatrace-bootstrap=scripts.boatrace_bootstrap:main",
             "boatrace-program-sheet=scripts.boatrace_program_sheet:main",
             "boatrace-agentic-test=scripts.run_agentic_chaos_tests:main",
