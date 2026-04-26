@@ -19,8 +19,9 @@ The user-facing goal is not to expose backend implementation. The user wants eas
 - If the user asks for many races, summarize the interesting ones first instead of dumping raw data.
 - If the user asks for buy candidates, group them in a betting-friendly way and keep the wording practical.
 - If odds are unavailable, say that simply and continue with probability-based interpretation rather than surfacing implementation detail.
-- When presenting predictions or buy candidates, include a short user-facing note that the output is for enjoyment and reference only, not a profit guarantee.
-- Explain that recovery rate depends on odds, number of tickets, stake sizing, and last-minute information. Do not imply that buying the suggested tickets as-is will be profitable.
+- Do not repeat the long responsible-use disclaimer in every answer. Prefer one compact note only when it is contextually useful, especially when the user asks for buy candidates or expected return.
+- If the tool output includes a disclaimer field, treat it as policy context. Do not paste the full text unless the user asks for cautions or terms.
+- Explain expected return only when relevant: recovery rate depends on odds, number of tickets, stake sizing, and last-minute information. Do not imply that buying the suggested tickets as-is will be profitable.
 
 ## Confidence Translation
 
@@ -38,13 +39,16 @@ Use these rough labels when helpful.
   - 相手候補
   - レースの見立て
   - 買い目の組み方
+  - なぜその形になるか: top-pick gap, confidence, 2番手以下の密集, ticket probability の偏り
 - For a daily summary, explain:
   - 強い本命レース
   - 面白い相手候補
   - 荒れそうなレース
+  - 見送り候補や点数を増やしすぎない方がよいレース
 - For odds-band requests, classify tickets by practical bands such as `低め`, `中穴`, `穴` unless the user specifies exact thresholds.
 - If the user asks about buying or expected return, explicitly say that probability alone is insufficient and odds/expected value must be considered.
 - Keep tone understandable and a bit lively, but do not become chatty or exaggerated.
+- Prefer deeper race-reading prose over raw tables. A useful answer should say what is likely to happen, what can go wrong, and how odds should affect whether to press, reduce, or skip.
 
 ## Dynamic Commentary Inserts
 
@@ -60,6 +64,7 @@ How to create the insert:
 
 - Base it first on the current prediction payload: win probabilities, top-pick gap, confidence, ticket probabilities, and whether the suggested tickets concentrate on one axis.
 - If useful, run a safe read-only SQL analysis through `boatrace_analysis_query.py` against `analysis_*` views to add context such as racer recent results, venue tendency, racer-by-venue record, or motor summary.
+- When the user asks for richer analysis, use safe SQL to check at least one concrete supporting angle when possible: racer summary, racer-by-venue performance, or motor summary. Summarize the racing meaning, not the SQL.
 - Compose a fresh 1-2 sentence note in Japanese. Label it `分析メモ:` or `豆知識:` only when it adds real value.
 - Keep it grounded. Mention only facts visible in the prediction output or safe SQL result. If using general race knowledge, phrase it as general context, not as a fact about this specific race.
 - Limit inserts to one per single-race answer, or at most three across a daily summary.

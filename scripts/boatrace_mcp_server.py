@@ -21,6 +21,7 @@ from scripts.boatrace_analysis_query import (  # noqa: E402
     execute_query,
 )
 from src.pipeline.duckdb_prediction_repository import DuckDBPredictionRepository  # noqa: E402
+from src.pipeline.prediction_commentary import attach_prediction_commentary  # noqa: E402
 from src.pipeline.prediction_disclaimer import (  # noqa: E402
     attach_prediction_disclaimer,
     prediction_disclaimer_payload,
@@ -48,6 +49,7 @@ def _jsonable(value: Any) -> Any:
 
 
 def _prediction_payload(value: Any) -> Any:
+    value = attach_prediction_commentary(value)
     return _jsonable(attach_prediction_disclaimer(value))
 
 

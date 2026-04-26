@@ -12,11 +12,25 @@ from typing import Any, Dict, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.pipeline.duckdb_prediction_repository import DuckDBPredictionRepository
+from src.pipeline.prediction_commentary import (
+    attach_prediction_commentary,
+    render_race_commentary_markdown,
+    render_run_commentary_markdown,
+)
 from src.pipeline.prediction_disclaimer import (
     attach_prediction_disclaimer,
     render_prediction_disclaimer_markdown,
 )
 from src.pipeline.prediction_auto_prepare import ensure_predictions_for_date
+
+
+TICKET_TYPE_LABELS = {
+    "win": "単勝",
+    "exacta": "2連単",
+    "quinella": "2連複",
+    "trifecta": "3連単",
+    "trio": "3連複",
+}
 
 
 def parse_date(value: str):
@@ -113,6 +127,8 @@ def render_markdown_run(payload: Optional[Dict[str, Any]]) -> str:
         f"- Model Path: `{payload.get('model_path') or 'auto'}`",
         f"- Total Races: {payload.get('total_races', 0)}",
         "",
+        render_run_commentary_markdown(payload),
+        "",
         "## Races",
         "",
     ]
@@ -142,6 +158,8 @@ def render_markdown_race(payload: Optional[Dict[str, Any]]) -> str:
         f"- Prediction Run: `{payload['prediction_run_id']}`",
         f"- Confidence: {float(payload.get('confidence_score', 0.0)):.3f}",
         "",
+        render_race_commentary_markdown(payload),
+        "",
         "## Top 3",
         "",
     ]
@@ -152,7 +170,7 @@ def render_markdown_race(payload: Optional[Dict[str, Any]]) -> str:
     if ticket_predictions:
         lines.extend(["", "## Ticket Picks", ""])
         for ticket_type, combinations in ticket_predictions.items():
-            lines.append(f"- {ticket_type}")
+            lines.append(f"- {TICKET_TYPE_LABELS.get(ticket_type, ticket_type)}")
             for combination in combinations[:3]:
                 lines.append(
                     f"  {combination['combination']} ({float(combination['probability']):.1%})"
@@ -184,6 +202,7 @@ def render_markdown_model(payload: Optional[Dict[str, Any]]) -> str:
 
 def render_output(command: str, payload: Any, output_format: str) -> str:
     if command in {"latest", "date", "race"}:
+        payload = attach_prediction_commentary(payload)
         payload = attach_prediction_disclaimer(payload)
     if output_format == "json":
         return json.dumps(payload, ensure_ascii=False, indent=2, default=str)

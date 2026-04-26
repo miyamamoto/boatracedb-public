@@ -15,7 +15,16 @@ from .duckdb_prediction_repository import (
     DuckDBPredictionRepository,
     VENUE_CODE_TO_NAME,
 )
+from .prediction_commentary import attach_prediction_commentary, render_run_commentary_markdown
 from .prediction_disclaimer import render_prediction_disclaimer_markdown
+
+TICKET_TYPE_LABELS = {
+    "win": "単勝",
+    "exacta": "2連単",
+    "quinella": "2連複",
+    "trifecta": "3連単",
+    "trio": "3連複",
+}
 
 if TYPE_CHECKING:
     from src.crawler.comprehensive_parser import ComprehensiveBoatRaceParser
@@ -706,6 +715,7 @@ class LocalPredictionPipeline:
             "summary": details.get("summary", {}),
             "races": details.get("races", []),
         }
+        attach_prediction_commentary(snapshot)
 
         json_path = export_dir / f"run_{prediction_run_id}.json"
         latest_json_path = export_dir / "latest.json"
@@ -748,6 +758,8 @@ class LocalPredictionPipeline:
         else:
             lines.append("")
 
+        lines.extend([render_run_commentary_markdown(snapshot), ""])
+
         lines.append("## Race Predictions")
         lines.append("")
 
@@ -766,8 +778,9 @@ class LocalPredictionPipeline:
             for ticket_type, combinations in ticket_predictions.items():
                 top_combination = combinations[0] if combinations else None
                 if top_combination:
+                    ticket_label = TICKET_TYPE_LABELS.get(ticket_type, ticket_type)
                     lines.append(
-                        f"  {ticket_type}: {top_combination['combination']}"
+                        f"  {ticket_label}: {top_combination['combination']}"
                         f" ({float(top_combination['probability']):.1%})"
                     )
 
