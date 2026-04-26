@@ -1,45 +1,33 @@
 # BoatRace Local Predictor
 
-ローカル端末だけでボートレース予測を作り、その結果を Codex / Claude の skill から読めるようにするための最小構成です。
+ボートレースの出走データをローカルに保存し、手元の端末で予測を作るためのツールです。予測結果は Codex / Claude / Claude Code から自然文で確認でき、必要に応じて Markdown や PDF のレポートも作れます。
 
-## 免責
+このツールでできること:
 
-このアプリケーションが出力する予測、買い目候補、SQL 分析結果、番組表、説明文は参考情報です。開発者および配布者は、これらの出力の正確性、有用性、完全性、利用結果について一切の責任を負いません。舟券購入やその他の判断は、必ず利用者自身の責任で行ってください。予測確率だけでは回収率は決まりません。実際の収益性はオッズ、購入点数、資金配分、直前情報に大きく左右されるため、そのまま信じて購入してもプラスになるとは限りません。あくまでレースを楽しむための材料として利用してください。
+- 本日・明日のレース予測を見る
+- 注目レース、軸候補、波乱候補をまとめた全体レポートを作る
+- 新聞風の PDF や印刷用の番組表 PDF を作る
+- 選手の過去実績、当地実績、モーター実績を踏まえてレースを深掘りする
+- DuckDB に保存したデータを読み取り専用 SQL で安全に分析する
+- Codex / Claude / Claude Code の skill や MCP からローカル予測を呼び出す
 
-目的は次の 2 点です。
+予測や買い目候補は参考情報です。的中や回収率は保証しません。舟券購入やその他の判断は、オッズ、購入点数、資金配分、直前情報も含めて自己責任で行ってください。
 
-- リモートからデータを取得し、DuckDB とローカルモデルで予測する
-- 予測結果を `boatrace-predictions` / `boatrace-program-sheet` skill と `boatrace-local` MCP から使う
+## すぐ使う
 
-## 1 コマンド導入
+### macOS / Linux
 
-macOS / Linux は、GitHub のアプリ一式を `~/boatracedb` に展開してからセットアップします。git、Python、LightGBM を事前に入れておく必要はありません。installer が `uv` を使ってアプリ専用の Python 3.11 環境と依存関係を作ります。
+次の 1 コマンドで、アプリ取得、専用 Python 環境作成、依存関係導入、データ取得、学習、予測、skill/MCP 導入まで実行します。
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/miyamamoto/boatracedb-public/main/scripts/install_remote.sh | bash
 ```
 
-対象日や学習期間を指定する場合:
+git、Python、LightGBM を事前に入れておく必要はありません。installer が `uv` を使って、アプリ専用の Python 3.11 環境を作ります。
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/miyamamoto/boatracedb-public/main/scripts/install_remote.sh | bash -s -- --target-date 2026-04-24 --training-days 90
-```
+### Windows
 
-既に `~/boatracedb` がある状態で同じコマンドを実行すると、アプリ本体と skill/MCP を更新します。既存の DuckDB、cache、モデル、予測結果は削除しません。更新時は既定でリモートデータ取得を避け、ローカルの `data/comprehensive_cache` と DuckDB を優先します。
-
-更新時に不足データも取得したい場合:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/miyamamoto/boatracedb-public/main/scripts/install_remote.sh | bash -s -- --download-missing
-```
-
-初回でもリモートデータ取得を避け、手元の cache だけで進めたい場合:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/miyamamoto/boatracedb-public/main/scripts/install_remote.sh | bash -s -- --cache-only
-```
-
-Windows PowerShell:
+PowerShell で実行してください。
 
 ```powershell
 git clone https://github.com/miyamamoto/boatracedb-public.git $HOME\boatracedb
@@ -47,43 +35,77 @@ cd $HOME\boatracedb
 powershell -ExecutionPolicy Bypass -File .\scripts\install_boatrace_local.ps1
 ```
 
-初回導入では、アプリ一式の展開、アプリ専用 Python 環境作成、依存関係導入、データ取得、特徴量作成、モデル学習、予測、skill/agent 配置、Claude MCP 登録まで実行します。既定の学習期間は直近 90 日、再学習間隔は 7 日です。
+Windows でも主な bootstrap 処理は動きます。定期実行は cron ではなく、Windows タスク スケジューラを使ってください。
 
-データ取得は cache 優先です。`data/comprehensive_cache` にある日付はリモート取得せず、足りない日付だけを取得対象にします。更新時は `--download-missing` を明示しない限り、不足データのリモート取得は行いません。
+## 初回セットアップで行うこと
 
-インストール中はスピナー、全体進捗、現在の処理、経過時間、残り時間の目安を表示します。初回は Python runtime 取得、DuckDB / LightGBM などの依存導入、データ取得、特徴量作成、LightGBM 学習に時間がかかります。
+初回は次の処理を順番に行います。時間がかかるため、installer はスピナー、現在の処理、経過時間、残り時間の目安を表示します。
+
+1. アプリ一式を `~/boatracedb` に配置
+2. アプリ専用 Python 3.11 環境を作成
+3. DuckDB、LightGBM などの依存関係を導入
+4. 過去データを取得
+5. 特徴量を作成
+6. ローカルモデルを学習
+7. 本日または指定日の予測を生成
+8. Codex / Claude / Claude Code skill と MCP を導入
 
 所要時間の目安:
 
-- 180日: 標準。データ取得だけで約1時間、初回セットアップ全体で約1.5から2.5時間
-- 365日: 年間分析向け。初回セットアップ全体で約3から5時間
-- 730日: 中長期分析向け。初回セットアップ全体で約6から10時間
-- 1095日: 長期研究向け。初回セットアップ全体で約9から15時間
+- 180日分: 標準。データ取得だけで約1時間、全体で約1.5から2.5時間
+- 365日分: 年間分析向け。全体で約3から5時間
+- 730日分: 中長期分析向け。全体で約6から10時間
+- 1095日分: 長期研究向け。全体で約9から15時間
 
-特に特徴量作成では、選手・モーター・会場などの過去成績を時系列で集計するため、端末性能やネットワーク状況によって大きく変わります。
+端末性能、ネットワーク、取得済み cache の量で大きく変わります。特徴量作成とモデル学習は特に時間がかかります。
 
-セットアップ時は、学習期間とは別に SQL 分析用へ投入する過去実績日数も指定できます。未指定の場合は既定で 180 日分を取得します。対話実行では installer が確認します。
+## データ取得と cache
+
+データ取得は cache 優先です。`data/comprehensive_cache` にある日付はリモート取得せず、足りない日付だけ取得します。
+
+既存インストールを更新する場合、既定では不足データをリモート取得しません。アプリ本体、skill、MCP を更新し、既存の DuckDB、cache、モデル、予測結果は保持します。
+
+不足データも取得したい場合:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/miyamamoto/boatracedb-public/main/scripts/install_remote.sh | bash -s -- --download-missing
+```
+
+手元の cache だけで進めたい場合:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/miyamamoto/boatracedb-public/main/scripts/install_remote.sh | bash -s -- --cache-only
+```
+
+SQL 分析用に投入する過去実績日数は、初回セットアップ時に選べます。既定は 180 日です。
 
 ```bash
 bash scripts/install_boatrace_local.sh --training-days 90 --analysis-days 365
 ```
 
-## 使い方
+## 普段の使い方
 
-最新予測を見る:
+本日の予測を見る:
+
+```bash
+boatrace-prediction-query --format markdown today
+```
+
+明日の予測を見る:
+
+```bash
+boatrace-prediction-query --format markdown tomorrow
+```
+
+最新の予測を見る:
 
 ```bash
 boatrace-prediction-query --format markdown latest
 ```
 
-本日または明日の予測を見る:
+本日/明日分がまだ無い場合は、既存モデルを使って自動で `fetch -> predict` を行ってから表示します。ここでは再学習は行いません。再学習は週1回程度の bootstrap 側に任せます。
 
-```bash
-boatrace-prediction-query --format markdown today
-boatrace-prediction-query --format markdown tomorrow
-```
-
-本日/明日分がまだ無い場合は、既存モデルを使って `fetch -> predict` を自動実行してから表示します。再学習はここでは行わず、週次再学習に任せます。
+## レポートと PDF
 
 全体予測レポートを Markdown / PDF で作る:
 
@@ -91,31 +113,23 @@ boatrace-prediction-query --format markdown tomorrow
 boatrace-prediction-report --latest --format markdown
 ```
 
-出力先は `output/prediction-reports/YYYY-MM-DD/` です。注目レース、軸候補、波乱候補、外枠・穴候補、会場別サマリーに加えて、confidence 帯別、本命艇番分布、券種別の上位候補平均などの集計もまとめます。
+出力先:
 
-モデルとデータの状態を見る:
-
-```bash
-boatrace-local-pipeline status
+```text
+output/prediction-reports/YYYY-MM-DD/prediction-report.md
+output/prediction-reports/YYYY-MM-DD/prediction-report.pdf
 ```
 
-SQL 分析用の安全なビューを見る:
+レポートには次を含めます。
 
-```bash
-boatrace-analysis-query schema
-```
-
-選手成績を read-only SQL で分析する:
-
-```bash
-boatrace-analysis-query query --sql "SELECT racer_name, starts, win_rate, top3_rate FROM analysis_racer_summary ORDER BY win_rate DESC LIMIT 20"
-```
-
-指定日の予測を作る:
-
-```bash
-boatrace-local-pipeline predict --target-date 2026-04-24
-```
+- 注目レース
+- 軸候補が強いレース
+- 波乱・相手探し候補
+- 外枠・穴の拾いどころ
+- 会場別サマリー
+- confidence 帯別の件数
+- 本命艇番分布
+- 券種別の上位候補平均
 
 印刷用の番組表 PDF を作る:
 
@@ -123,9 +137,44 @@ boatrace-local-pipeline predict --target-date 2026-04-24
 boatrace-program-sheet --target-date 2026-04-24 --venue-code 22
 ```
 
-## Skill 連携
+出力先:
 
-導入後、次のファイルが自動配置されます。
+```text
+output/program-sheets/YYYY-MM-DD/
+```
+
+## レースを深掘りする
+
+Claude / Codex から「平和島9Rを選手の過去実績も踏まえて教えて」のように聞くと、予測、出走選手、選手過去実績、当地実績、モーター実績をまとめて確認します。
+
+Claude / Codex の回答では、内部の SQL や DB の説明ではなく、次のように何を確認しているかを表示する設計です。
+
+```text
+まず平和島9Rの予測と上位候補を確認します。
+次に、このレースの出走選手の過去成績を確認します。
+当地実績とモーター成績を照らし合わせます。
+最後に、予測値と過去実績を合わせて見立てを整理します。
+```
+
+## SQL 分析
+
+安全な読み取り専用ビューを確認する:
+
+```bash
+boatrace-analysis-query schema
+```
+
+選手成績を分析する:
+
+```bash
+boatrace-analysis-query query --sql "SELECT racer_name, starts, win_rate, top3_rate FROM analysis_racer_summary ORDER BY win_rate DESC LIMIT 20"
+```
+
+SQL 分析は `analysis_*` ビューだけを許可します。DDL/DML、ファイル読込、複数ステートメント、外部 DB attach などは拒否します。
+
+## Skill / MCP 連携
+
+installer は次を自動配置します。
 
 - Codex: `~/.codex/skills/boatrace-predictions`
 - Codex: `~/.codex/skills/boatrace-program-sheet`
@@ -134,17 +183,38 @@ boatrace-program-sheet --target-date 2026-04-24 --venue-code 22
 - Claude: `~/.claude/agents/boatrace-predictions.md`
 - Claude: `~/.claude/agents/boatrace-program-sheet.md`
 
-Claude Code / Claude Desktop には `boatrace-local` MCP server も自動登録されます。これはローカル DuckDB を読み取り専用で参照する server です。自由分析 SQL は `analysis_*` ビューだけを許可し、DDL/DML、ファイル読込、複数ステートメントは拒否します。
+Claude Code / Claude Desktop には `boatrace-local` MCP server も登録します。ローカル DuckDB を読み取り専用で参照します。
 
-MCP から使える主な道具:
+主な MCP tool:
 
 - `boatrace_status`: DB、モデル、予測の状態確認
 - `boatrace_latest_predictions`: 最新予測一覧
 - `boatrace_race_prediction`: 指定レースの予測
+- `boatrace_race_deep_analysis`: 指定レースの予測、選手実績、当地実績、モーター実績
 - `boatrace_analysis_schema`: SQL 分析用ビューの確認
 - `boatrace_safe_analysis_query`: 読み取り専用 SQL 分析
 
+## 更新
+
+macOS / Linux は同じ install command を再実行します。
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/miyamamoto/boatracedb-public/main/scripts/install_remote.sh | bash
+```
+
+Windows:
+
+```powershell
+cd $HOME\boatracedb
+git pull
+powershell -ExecutionPolicy Bypass -File .\scripts\install_boatrace_local.ps1
+```
+
+更新時は既存の `data/`, `models/`, `.venv` を保持します。
+
 ## アンインストール
+
+macOS / Linux:
 
 ```bash
 rm -rf ~/boatracedb
@@ -153,9 +223,7 @@ rm -rf ~/.claude/skills/boatrace-predictions ~/.claude/skills/boatrace-program-s
 rm -f ~/.claude/agents/boatrace-predictions.md ~/.claude/agents/boatrace-program-sheet.md
 ```
 
-データ、モデル、予測結果も `~/boatracedb` 配下に入るため、上の削除でローカル環境は消えます。Claude MCP の登録は `~/.claude.json` と Claude Desktop config から `boatrace-local` を削除してください。
-
-反映には Codex / Claude の再起動が必要です。通常の質問では backend の詳細を出さず、予測の見立て、買い目候補、番組表の要点を自然な説明として返す設計です。
+Windows は `$HOME\boatracedb` を削除し、Claude / Codex 側に配置した skill や MCP 設定を削除してください。
 
 ## 保存先
 
@@ -163,14 +231,18 @@ rm -f ~/.claude/agents/boatrace-predictions.md ~/.claude/agents/boatrace-program
 - 取得 cache: `data/comprehensive_cache`
 - モデル: `models/duckdb_local_model_*.pkl`
 - 予測出力: `output/predictions/YYYY-MM-DD/`
+- 全体予測レポート: `output/prediction-reports/YYYY-MM-DD/`
 - 番組表 PDF: `output/program-sheets/YYYY-MM-DD/`
 
 ## 必要環境
 
-- Python 3.11+
-- Git
-- ネットワーク接続
-- macOS で LightGBM 読み込みに失敗する場合は `brew install libomp`
+通常の macOS / Linux installer では、git や Python の事前準備は不要です。Windows は git clone を使うため Git が必要です。
+
+macOS で LightGBM 読み込みに失敗する場合:
+
+```bash
+brew install libomp
+```
 
 ## License
 
