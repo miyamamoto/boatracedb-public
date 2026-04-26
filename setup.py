@@ -17,7 +17,7 @@ if requirements_file.exists():
 
 setup(
     name="boatrace-prediction-system",
-    version="1.0.0",
+    version="1.1.0",
     author="BoatRace Team",
     author_email="admin@boatrace-predict.com",
     description="ボートレース予測システム - DuckDB ローカル予測パイプライン",
